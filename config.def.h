@@ -16,11 +16,11 @@ static const char *colorname[NUMCOLS] = {
 
 /* emoji for each state; set an entry to "" to show none for that state */
 static const char *emoji[NUMCOLS] = {
-	[INIT]      = "🐵",
+	[INIT]      = "🐒",
 	[INPUT]     = "🙈",
-	[INPUT_ALT] = "🙈",
+	[INPUT_ALT] = "🙉",
 	[FAILED]    = "🙊",
-	[CAPS]      = "🙉",
+	[CAPS]      = "🐵",
 };
 static const int showemoji = 1;
 
