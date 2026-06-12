@@ -1,4 +1,4 @@
-/* mlock - a pretty screen locker for X
+/* lok - a pretty screen locker for X
  *
  * Based on slock by the suckless.org community.
  * See LICENSE file for license details. */
@@ -94,17 +94,17 @@ dontkillme(void)
 	if (!(f = fopen(oomfile, "w"))) {
 		if (errno == ENOENT)
 			return;
-		fprintf(stderr, "mlock: fopen %s: %s\n", oomfile,
+		fprintf(stderr, "lok: fopen %s: %s\n", oomfile,
 		        strerror(errno));
 		return;
 	}
 	fprintf(f, "%d", OOM_SCORE_ADJ_MIN);
 	if (fclose(f)) {
 		if (errno == EACCES)
-			fprintf(stderr, "mlock: unable to disable OOM killer "
+			fprintf(stderr, "lok: unable to disable OOM killer "
 			        "(run suid/sgid for full protection)\n");
 		else
-			fprintf(stderr, "mlock: fclose %s: %s\n",
+			fprintf(stderr, "lok: fclose %s: %s\n",
 			        oomfile, strerror(errno));
 	}
 }
@@ -121,20 +121,20 @@ gethash(void)
 	errno = 0;
 	if (!(pw = getpwuid(getuid()))) {
 		if (errno)
-			die("mlock: getpwuid: %s\n", strerror(errno));
+			die("lok: getpwuid: %s\n", strerror(errno));
 		else
-			die("mlock: cannot retrieve password entry\n");
+			die("lok: cannot retrieve password entry\n");
 	}
 	hash = pw->pw_passwd;
 
 	if (!strcmp(hash, "x")) {
 		if (!(sp = getspnam(pw->pw_name)))
-			die("mlock: getspnam: cannot retrieve shadow entry. "
-			    "Make sure to suid or sgid mlock.\n");
+			die("lok: getspnam: cannot retrieve shadow entry. "
+			    "Make sure to suid or sgid lok.\n");
 		hash = sp->sp_pwdp;
 	} else if (!strcmp(hash, "*")) {
-		die("mlock: getpwuid: cannot retrieve password entry. "
-		    "Make sure to suid or sgid mlock.\n");
+		die("lok: getpwuid: cannot retrieve password entry. "
+		    "Make sure to suid or sgid lok.\n");
 	}
 
 	return hash;
@@ -146,7 +146,7 @@ parsecolor(Display *dpy, const char *name, double *rgb)
 	XColor c;
 
 	if (!XParseColor(dpy, DefaultColormap(dpy, DefaultScreen(dpy)), name, &c))
-		die("mlock: cannot parse color \"%s\"\n", name);
+		die("lok: cannot parse color \"%s\"\n", name);
 	rgb[0] = c.red   / 65535.0;
 	rgb[1] = c.green / 65535.0;
 	rgb[2] = c.blue  / 65535.0;
@@ -380,7 +380,7 @@ readpw(Display *dpy, struct lock **locks, int nscreens, const char *hash)
 					passwd[len] = '\0';
 					errno = 0;
 					if (!(inputhash = crypt(passwd, hash)))
-						fprintf(stderr, "mlock: crypt: %s\n",
+						fprintf(stderr, "lok: crypt: %s\n",
 						        strerror(errno));
 					else
 						running = !!strcmp(inputhash, hash);
@@ -474,7 +474,7 @@ readpw(Display *dpy, struct lock **locks, int nscreens, const char *hash)
 		tv.tv_usec = 0;
 		if (select(xfd + 1, &fds, NULL, NULL, need_timer ? &tv : NULL) < 0) {
 			if (errno != EINTR)
-				die("mlock: select: %s\n", strerror(errno));
+				die("lok: select: %s\n", strerror(errno));
 		}
 		if (need_timer) {
 			char now[256];
@@ -593,10 +593,10 @@ lockscreen(Display *dpy, int screen)
 
 	/* we couldn't grab all input: fail out */
 	if (ptgrab != GrabSuccess)
-		fprintf(stderr, "mlock: unable to grab mouse pointer for screen %d\n",
+		fprintf(stderr, "lok: unable to grab mouse pointer for screen %d\n",
 		        screen);
 	if (kbgrab != GrabSuccess)
-		fprintf(stderr, "mlock: unable to grab keyboard for screen %d\n",
+		fprintf(stderr, "lok: unable to grab keyboard for screen %d\n",
 		        screen);
 	cairo_surface_destroy(lock->bufsurf);
 	XFreePixmap(dpy, lock->buf);
@@ -624,7 +624,7 @@ unlockscreen(Display *dpy, struct lock *lock)
 static void
 usage(void)
 {
-	die("usage: mlock [-v] [-t title] [-s subtitle] [-b bottomtext]"
+	die("usage: lok [-v] [-t title] [-s subtitle] [-b bottomtext]"
 	    " [-T 0/1] [-S 0/1] [-B 0/1]"
 	    " [cmd [arg ...]]\n");
 }
@@ -648,7 +648,7 @@ main(int argc, char **argv)
 
 	ARGBEGIN {
 	case 'v':
-		puts("mlock-"VERSION);
+		puts("lok-"VERSION);
 		return 0;
 	case 't':
 		titletext = EARGF(usage());
@@ -675,12 +675,12 @@ main(int argc, char **argv)
 	/* validate drop-user and -group */
 	errno = 0;
 	if (!(pwd = getpwnam(user)))
-		die("mlock: getpwnam %s: %s\n", user,
+		die("lok: getpwnam %s: %s\n", user,
 		    errno ? strerror(errno) : "user entry not found");
 	duid = pwd->pw_uid;
 	errno = 0;
 	if (!(grp = getgrnam(group)))
-		die("mlock: getgrnam %s: %s\n", group,
+		die("lok: getgrnam %s: %s\n", group,
 		    errno ? strerror(errno) : "group entry not found");
 	dgid = grp->gr_gid;
 
@@ -690,23 +690,23 @@ main(int argc, char **argv)
 
 	/* the password buffer must never hit swap */
 	if (mlockall(MCL_CURRENT) < 0)
-		fprintf(stderr, "mlock: mlockall: %s\n", strerror(errno));
+		fprintf(stderr, "lok: mlockall: %s\n", strerror(errno));
 
 	hash = gethash();
 	errno = 0;
 	if (!crypt("", hash))
-		die("mlock: crypt: %s\n", strerror(errno));
+		die("lok: crypt: %s\n", strerror(errno));
 
 	if (!(dpy = XOpenDisplay(NULL)))
-		die("mlock: cannot open display\n");
+		die("lok: cannot open display\n");
 
 	/* drop privileges */
 	if (setgroups(0, NULL) < 0)
-		die("mlock: setgroups: %s\n", strerror(errno));
+		die("lok: setgroups: %s\n", strerror(errno));
 	if (setgid(dgid) < 0)
-		die("mlock: setgid: %s\n", strerror(errno));
+		die("lok: setgid: %s\n", strerror(errno));
 	if (setuid(duid) < 0)
-		die("mlock: setuid: %s\n", strerror(errno));
+		die("lok: setuid: %s\n", strerror(errno));
 
 	/* check for Xrandr support */
 	rr.active = XRRQueryExtension(dpy, &rr.evbase, &rr.errbase);
@@ -719,7 +719,7 @@ main(int argc, char **argv)
 	/* get number of screens in display "dpy" and blank them */
 	nscreens = ScreenCount(dpy);
 	if (!(locks = calloc(nscreens, sizeof(struct lock *))))
-		die("mlock: out of memory\n");
+		die("lok: out of memory\n");
 	for (nlocks = 0, s = 0; s < nscreens; s++) {
 		if ((locks[s] = lockscreen(dpy, s)) != NULL)
 			nlocks++;
@@ -746,12 +746,12 @@ main(int argc, char **argv)
 	if (argc > 0) {
 		switch (fork()) {
 		case -1:
-			die("mlock: fork failed: %s\n", strerror(errno));
+			die("lok: fork failed: %s\n", strerror(errno));
 		case 0:
 			if (close(ConnectionNumber(dpy)) < 0)
-				die("mlock: close: %s\n", strerror(errno));
+				die("lok: close: %s\n", strerror(errno));
 			execvp(argv[0], argv);
-			fprintf(stderr, "mlock: execvp %s: %s\n",
+			fprintf(stderr, "lok: execvp %s: %s\n",
 			        argv[0], strerror(errno));
 			_exit(1);
 		}

@@ -1,4 +1,4 @@
-# mlock version
+# lok version
 VERSION = 0.1
 
 # paths

@@ -1,6 +1,6 @@
-/* LD_PRELOAD shim for testing mlock without root.
+/* LD_PRELOAD shim for testing lok without root.
  *
- * When MLOCK_TEST_HASH is set in the environment it:
+ * When LOK_TEST_HASH is set in the environment it:
  *   - makes getpwuid() return that hash as the password entry, so no
  *     shadow access (and thus no setuid) is needed
  *   - redirects the oom_score_adj write to /dev/null
@@ -22,7 +22,7 @@
 static int
 active(void)
 {
-	return getenv("MLOCK_TEST_HASH") != NULL;
+	return getenv("LOK_TEST_HASH") != NULL;
 }
 
 struct passwd *
@@ -37,7 +37,7 @@ getpwuid(uid_t uid)
 	if (!p || !active())
 		return p;
 	pw = *p;
-	snprintf(hash, sizeof(hash), "%s", getenv("MLOCK_TEST_HASH"));
+	snprintf(hash, sizeof(hash), "%s", getenv("LOK_TEST_HASH"));
 	pw.pw_passwd = hash;
 	return &pw;
 }

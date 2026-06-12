@@ -1,12 +1,12 @@
-# mlock - a pretty screen locker
+# lok - a pretty screen locker
 # See LICENSE file for copyright and license details.
 
 include config.mk
 
-SRC = mlock.c
+SRC = lok.c
 OBJ = $(SRC:.c=.o)
 
-all: mlock
+all: lok
 
 .c.o:
 	$(CC) -c $(CFLAGS) $<
@@ -16,32 +16,32 @@ $(OBJ): arg.h config.h config.mk
 config.h:
 	cp config.def.h $@
 
-mlock: $(OBJ)
+lok: $(OBJ)
 	$(CC) -o $@ $(OBJ) $(LDFLAGS)
 
 clean:
 	rm -f config.h
-	rm -f mlock $(OBJ) mlock-$(VERSION).tar.gz test/shim.so
+	rm -f lok $(OBJ) lok-$(VERSION).tar.gz test/shim.so
 
 dist: clean
-	mkdir -p mlock-$(VERSION)
+	mkdir -p lok-$(VERSION)
 	cp -R LICENSE Makefile README.md config.mk config.def.h arg.h \
-		mlock.1 $(SRC) mlock-$(VERSION)
-	tar -cf - mlock-$(VERSION) | gzip > mlock-$(VERSION).tar.gz
-	rm -rf mlock-$(VERSION)
+		lok.1 $(SRC) lok-$(VERSION)
+	tar -cf - lok-$(VERSION) | gzip > lok-$(VERSION).tar.gz
+	rm -rf lok-$(VERSION)
 
 install: all
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
-	cp -f mlock $(DESTDIR)$(PREFIX)/bin
-	chmod 755 $(DESTDIR)$(PREFIX)/bin/mlock
-	chmod u+s $(DESTDIR)$(PREFIX)/bin/mlock
+	cp -f lok $(DESTDIR)$(PREFIX)/bin
+	chmod 755 $(DESTDIR)$(PREFIX)/bin/lok
+	chmod u+s $(DESTDIR)$(PREFIX)/bin/lok
 	mkdir -p $(DESTDIR)$(MANPREFIX)/man1
-	sed "s/VERSION/$(VERSION)/g" < mlock.1 > $(DESTDIR)$(MANPREFIX)/man1/mlock.1
-	chmod 644 $(DESTDIR)$(MANPREFIX)/man1/mlock.1
+	sed "s/VERSION/$(VERSION)/g" < lok.1 > $(DESTDIR)$(MANPREFIX)/man1/lok.1
+	chmod 644 $(DESTDIR)$(MANPREFIX)/man1/lok.1
 
 uninstall:
-	rm -f $(DESTDIR)$(PREFIX)/bin/mlock
-	rm -f $(DESTDIR)$(MANPREFIX)/man1/mlock.1
+	rm -f $(DESTDIR)$(PREFIX)/bin/lok
+	rm -f $(DESTDIR)$(MANPREFIX)/man1/lok.1
 
 test: all
 	sh test/run.sh

@@ -1,4 +1,4 @@
-/* mlock configuration.
+/* lok configuration.
  * `make` copies this to config.h on first build; edit config.h. */
 
 /* user and group to drop privileges to */

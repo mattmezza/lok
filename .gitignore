@@ -1,6 +1,6 @@
-mlock
+lok
 *.o
 config.h
 test/shim.so
-mlock-*.tar.gz
+lok-*.tar.gz
 .tmux-session

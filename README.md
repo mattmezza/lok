@@ -1,4 +1,4 @@
-# mlock 🐵
+# lok 🐵
 
 **m**onkey **lock**er (or matteo's locker, pick your favorite) — a simple
 screen locker for X, in the spirit of [slock](https://tools.suckless.org/slock/)
@@ -30,7 +30,7 @@ but with proper text rendering and a three-wise-monkeys state machine.
 - the whole process is locked in RAM (`mlockall(2)`), so the typed
   password can never end up in swap
 - OOM-killer protection on Linux
-- runs a command after locking, e.g. `mlock systemctl suspend`
+- runs a command after locking, e.g. `lok systemctl suspend`
 
 ## Requirements
 
@@ -47,7 +47,7 @@ pacman -S --needed libx11 libxext libxrandr pango cairo noto-fonts-emoji
 sudo make clean install
 ```
 
-This installs `mlock` setuid root (needed to read `/etc/shadow`; privileges
+This installs `lok` setuid root (needed to read `/etc/shadow`; privileges
 are dropped to `nobody` immediately after, before any font rendering or X
 traffic happens).
 
@@ -60,11 +60,11 @@ spacing, DPMS timeout, the user/group to drop privileges to). The first
 The texts can also be overridden at runtime:
 
 ```
-mlock [-v] [-t title] [-s subtitle] [-b bottomtext] \
+lok [-v] [-t title] [-s subtitle] [-b bottomtext] \
       [-T 0/1] [-S 0/1] [-B 0/1] [cmd [arg ...]]
 ```
 
-An empty string disables an element: `mlock -t "" -s "" -b ""` gives you a
+An empty string disables an element: `lok -t "" -s "" -b ""` gives you a
 bare colored screen with just the monkey.
 
 The `-T`/`-S`/`-B` flags enable or disable live `strftime(3)` expansion
@@ -74,16 +74,16 @@ are replaced with the current time and updated every second.
 
 ```sh
 # footer still acts as a clock; title and subtitle are static
-mlock -T 0 -S 0
+lok -T 0 -S 0
 
 # all three fields show the current time
-mlock -t "%A %H:%M" -s "%B %d" -b "locker since %H:%M:%S"
+lok -t "%A %H:%M" -s "%B %d" -b "locker since %H:%M:%S"
 
 # title can be a clock too, footer is static
-mlock -t "It is %H:%M" -B 0
+lok -t "It is %H:%M" -B 0
 
-mlock systemctl suspend
-xss-lock -- mlock &        # lock automatically on suspend/idle
+lok systemctl suspend
+xss-lock -- lok &        # lock automatically on suspend/idle
 ```
 
 ## Testing
@@ -95,7 +95,7 @@ shim to inject a known password hash so no root is needed. Requires
 
 ## Security notes
 
-The usual X11 locker caveats apply: mlock grabs the keyboard and pointer
+The usual X11 locker caveats apply: lok grabs the keyboard and pointer
 and disables the OOM killer for itself, but it cannot stop someone from
 switching to another VT (disable that in your Xorg config if you care) or
 from sysrq-killing the X server. It protects against the casual passerby,
