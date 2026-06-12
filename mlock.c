@@ -92,15 +92,18 @@ dontkillme(void)
 	if (!(f = fopen(oomfile, "w"))) {
 		if (errno == ENOENT)
 			return;
-		die("mlock: fopen %s: %s\n", oomfile, strerror(errno));
+		fprintf(stderr, "mlock: fopen %s: %s\n", oomfile,
+		        strerror(errno));
+		return;
 	}
 	fprintf(f, "%d", OOM_SCORE_ADJ_MIN);
 	if (fclose(f)) {
 		if (errno == EACCES)
-			die("mlock: unable to disable OOM killer. "
-			    "Make sure to suid or sgid mlock.\n");
+			fprintf(stderr, "mlock: unable to disable OOM killer "
+			        "(run suid/sgid for full protection)\n");
 		else
-			die("mlock: fclose %s: %s\n", oomfile, strerror(errno));
+			fprintf(stderr, "mlock: fclose %s: %s\n",
+			        oomfile, strerror(errno));
 	}
 }
 #endif
