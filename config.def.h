@@ -51,3 +51,9 @@ static const int failonclear = 1;
 
 /* turn the monitor off via DPMS after this many seconds; 0 disables */
 static const int monitortime = 0;
+
+/* enable live strftime(3) expansion in each text field;
+ * CLI flags -T/-S/-B override these at runtime */
+static int title_datetime_updated    = 1;
+static int subtitle_datetime_updated = 1;
+static int footer_datetime_updated   = 1;

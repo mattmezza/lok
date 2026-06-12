@@ -19,6 +19,15 @@ and a footer line, all centered per physical monitor. The background color,
 the emoji and the texts change with the lock state: idle, typing (two
 alternating colors), wrong password, and caps lock active.
 .Pp
+Every text field (title, subtitle, footer) can contain
+.Xr strftime 3
+format specifiers; when enabled via
+.Fl T / S / B
+or the corresponding
+config.h
+settings, those placeholders are replaced with the current time and updated
+every second, effectively turning any part of the display into a clock.
+.Pp
 If
 .Ar cmd
 is given, it is executed after the screen has been locked.
@@ -31,12 +40,27 @@ Override the main centered text. An empty string disables it.
 .It Fl s Ar subtitle
 Override the subtitle shown below the title. An empty string disables it.
 .It Fl b Ar bottomtext
-Override the footer text. It is expanded with
-.Xr strftime 3 ,
-so it can act as a clock, e.g.
-.Qq It is %H:%M .
-An empty string disables it.
+Override the footer text. An empty string disables it.
+.It Fl T Ar val
+Enable (1) or disable (0) live
+.Xr strftime 3
+expansion in the title text. Default: 1.
+.It Fl S Ar val
+Enable (1) or disable (0) live
+.Xr strftime 3
+expansion in the subtitle. Default: 1.
+.It Fl B Ar val
+Enable (1) or disable (0) live
+.Xr strftime 3
+expansion in the footer text. Default: 1.
 .El
+.Pp
+When live expansion is enabled for a field its text is scanned for
+.Xr strftime 3
+format specifiers (e.g.
+.Qq %H:%M )
+and the placeholders are updated every second. This allows any part of the
+screen to act as a clock.
 .Sh SECURITY CONSIDERATIONS
 .Nm
 reads the password hash from

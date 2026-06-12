@@ -16,7 +16,11 @@ but with proper text rendering and a three-wise-monkeys state machine.
   colors on every keypress, slock style
 - configurable title, subtitle and footer text, rendered with pango;
   any of them can be disabled
-- the footer is expanded with `strftime(3)`, so it doubles as a clock
+- every text field (title, subtitle, footer) supports live
+  `strftime(3)` expansion — any of them can act as a clock;
+  controlled per-field via the `-T`/`-S`/`-B` flags or
+  `title_datetime_updated`/`subtitle_datetime_updated`/
+  `footer_datetime_updated` in `config.h`
 - failed attempt counter
 - multi-monitor aware: the text stack is centered on every connected
   monitor (XRandR), and every X screen gets its own lock window
@@ -56,14 +60,28 @@ spacing, DPMS timeout, the user/group to drop privileges to). The first
 The texts can also be overridden at runtime:
 
 ```
-mlock [-v] [-t title] [-s subtitle] [-b bottomtext] [cmd [arg ...]]
+mlock [-v] [-t title] [-s subtitle] [-b bottomtext] \
+      [-T 0/1] [-S 0/1] [-B 0/1] [cmd [arg ...]]
 ```
 
 An empty string disables an element: `mlock -t "" -s "" -b ""` gives you a
 bare colored screen with just the monkey.
 
+The `-T`/`-S`/`-B` flags enable or disable live `strftime(3)` expansion
+for the title, subtitle and footer respectively (default: 1, from
+`config.h`). When enabled, format specifiers such as `%H:%M` or `%A`
+are replaced with the current time and updated every second.
+
 ```sh
-mlock -t "gone for lunch" -s "" -b "back at %H:30"
+# footer still acts as a clock; title and subtitle are static
+mlock -T 0 -S 0
+
+# all three fields show the current time
+mlock -t "%A %H:%M" -s "%B %d" -b "locker since %H:%M:%S"
+
+# title can be a clock too, footer is static
+mlock -t "It is %H:%M" -B 0
+
 mlock systemctl suspend
 xss-lock -- mlock &        # lock automatically on suspend/idle
 ```

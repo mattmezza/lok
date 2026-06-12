@@ -175,40 +175,43 @@ mklayout(cairo_t *cr, const char *font, const char *text)
 	return layout;
 }
 
-/* footertext is run through strftime(3), so it doubles as a clock */
+/* expand a strftime(3) format string into buf; buf is empty on failure */
 static void
-fmtfooter(char *buf, size_t n)
+fmtdatetime(char *buf, size_t n, const char *fmt)
 {
 	time_t t;
 
 	buf[0] = '\0';
-	if (!footertext || !footertext[0])
+	if (!fmt || !fmt[0])
 		return;
 	t = time(NULL);
-	if (!strftime(buf, n, footertext, localtime(&t)))
+	if (!strftime(buf, n, fmt, localtime(&t)))
 		buf[0] = '\0';
 }
 
 /* draw the emoji/title/subtext stack centered in the given rectangle,
- * plus the footer at its bottom edge */
+ * plus the footer at its bottom edge.
+ * Text fields whose datetime_updated flag is set and contain '%' are
+ * expanded with strftime(3) every second. */
 static void
 drawmon(cairo_t *cr, int mx, int my, int mw, int mh, int state)
 {
 	PangoLayout *lay[3], *flay;
 	const double *col[3];
-	const char *sub;
-	char failbuf[128], footbuf[256];
+	const char *sub, *title, *footer;
+	char titlebuf[256], subbuf[256], failbuf[128], footbuf[256];
 	int w[3], h[3], fw, fh, n = 0, i, total = 0, y;
 
-	if (showemoji && emoji[state] && emoji[state][0]) {
-		lay[n] = mklayout(cr, emojifont, emoji[state]);
-		col[n++] = fgcol;
-	}
-	if (titletext && titletext[0]) {
-		lay[n] = mklayout(cr, titlefont, titletext);
-		col[n++] = fgcol;
+	/* title — expand strftime codes when enabled */
+	title = titletext;
+	if (titletext && titletext[0] && title_datetime_updated &&
+	    strchr(titletext, '%')) {
+		fmtdatetime(titlebuf, sizeof(titlebuf), titletext);
+		if (titlebuf[0])
+			title = titlebuf;
 	}
 
+	/* subtitle — expand strftime codes when enabled */
 	sub = subtext;
 	if (state == FAILED && failcount > 0) {
 		snprintf(failbuf, sizeof(failbuf),
@@ -216,6 +219,20 @@ drawmon(cairo_t *cr, int mx, int my, int mw, int mh, int state)
 		sub = failbuf;
 	} else if (state == CAPS) {
 		sub = capstext;
+	} else if (sub && sub[0] && subtitle_datetime_updated &&
+	           strchr(sub, '%')) {
+		fmtdatetime(subbuf, sizeof(subbuf), sub);
+		if (subbuf[0])
+			sub = subbuf;
+	}
+
+	if (showemoji && emoji[state] && emoji[state][0]) {
+		lay[n] = mklayout(cr, emojifont, emoji[state]);
+		col[n++] = fgcol;
+	}
+	if (title && title[0]) {
+		lay[n] = mklayout(cr, titlefont, title);
+		col[n++] = fgcol;
 	}
 	if (sub && sub[0]) {
 		lay[n] = mklayout(cr, subfont, sub);
@@ -235,9 +252,16 @@ drawmon(cairo_t *cr, int mx, int my, int mw, int mh, int state)
 		g_object_unref(lay[i]);
 	}
 
-	fmtfooter(footbuf, sizeof(footbuf));
-	if (footbuf[0]) {
-		flay = mklayout(cr, footerfont, footbuf);
+	/* footer — expand strftime codes when enabled */
+	footer = footertext;
+	if (footertext && footertext[0] && footer_datetime_updated &&
+	    strchr(footertext, '%')) {
+		fmtdatetime(footbuf, sizeof(footbuf), footertext);
+		if (footbuf[0])
+			footer = footbuf;
+	}
+	if (footer && footer[0]) {
+		flay = mklayout(cr, footerfont, footer);
 		pango_layout_get_pixel_size(flay, &fw, &fh);
 		cairo_set_source_rgb(cr, dimcol[0], dimcol[1], dimcol[2]);
 		cairo_move_to(cr, mx + (mw - fw) / 2, my + mh - fh - bottommargin);
@@ -291,21 +315,25 @@ readpw(Display *dpy, struct lock **locks, int nscreens, const char *hash)
 	XEvent ev;
 	KeySym ksym;
 	static char passwd[256];
-	char buf[32], now[256], lastclock[256];
+	char buf[32];
 	const char *inputhash;
 	unsigned int len = 0;
 	int num, s, alt = 0, failure = 0, dirty = 0, running = 1;
 	int oldc, color;
 	int xfd = ConnectionNumber(dpy);
-	int useclock = footertext && footertext[0] && strchr(footertext, '%');
+	int need_timer;
 	fd_set fds;
 	struct timeval tv;
+
+	/* check if any text field has live strftime codes enabled */
+	need_timer =
+		(title_datetime_updated && titletext && strchr(titletext, '%')) ||
+		(subtitle_datetime_updated && subtext && strchr(subtext, '%')) ||
+		(footer_datetime_updated && footertext && strchr(footertext, '%'));
 
 	caps = getcaps(dpy);
 	oldc = caps ? CAPS : INIT;
 	drawall(dpy, locks, nscreens, oldc);
-	if (useclock)
-		fmtfooter(lastclock, sizeof(lastclock));
 
 	while (running) {
 		while (running && XPending(dpy)) {
@@ -413,16 +441,13 @@ readpw(Display *dpy, struct lock **locks, int nscreens, const char *hash)
 		FD_SET(xfd, &fds);
 		tv.tv_sec = 1;
 		tv.tv_usec = 0;
-		if (select(xfd + 1, &fds, NULL, NULL, useclock ? &tv : NULL) < 0) {
+		if (select(xfd + 1, &fds, NULL, NULL, need_timer ? &tv : NULL) < 0) {
 			if (errno != EINTR)
 				die("mlock: select: %s\n", strerror(errno));
 		}
-		if (useclock) {
-			fmtfooter(now, sizeof(now));
-			if (strcmp(now, lastclock)) {
-				memcpy(lastclock, now, sizeof(lastclock));
-				drawall(dpy, locks, nscreens, oldc);
-			}
+		if (need_timer) {
+			/* redraw so drawmon picks up fresh strftime expansions */
+			drawall(dpy, locks, nscreens, oldc);
 		}
 	}
 	explicit_bzero(&passwd, sizeof(passwd));
@@ -531,8 +556,9 @@ unlockscreen(Display *dpy, struct lock *lock)
 static void
 usage(void)
 {
-	die("usage: mlock [-v] [-t title] [-s subtitle] [-b bottomtext] "
-	    "[cmd [arg ...]]\n");
+	die("usage: mlock [-v] [-t title] [-s subtitle] [-b bottomtext]"
+	    " [-T 0/1] [-S 0/1] [-B 0/1]"
+	    " [cmd [arg ...]]\n");
 }
 
 int
@@ -564,6 +590,15 @@ main(int argc, char **argv)
 		break;
 	case 'b':
 		footertext = EARGF(usage());
+		break;
+	case 'T':
+		title_datetime_updated = atoi(EARGF(usage()));
+		break;
+	case 'S':
+		subtitle_datetime_updated = atoi(EARGF(usage()));
+		break;
+	case 'B':
+		footer_datetime_updated = atoi(EARGF(usage()));
 		break;
 	default:
 		usage();
