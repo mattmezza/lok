@@ -321,15 +321,27 @@ readpw(Display *dpy, struct lock **locks, int nscreens, const char *hash)
 	int num, s, alt = 0, failure = 0, dirty = 0, running = 1;
 	int oldc, color;
 	int xfd = ConnectionNumber(dpy);
-	int need_timer;
+	int need_timer, has_title_dt, has_sub_dt, has_footer_dt;
+	char last_title[256], last_sub[256], last_footer[256];
 	fd_set fds;
 	struct timeval tv;
 
-	/* check if any text field has live strftime codes enabled */
-	need_timer =
-		(title_datetime_updated && titletext && strchr(titletext, '%')) ||
-		(subtitle_datetime_updated && subtext && strchr(subtext, '%')) ||
-		(footer_datetime_updated && footertext && strchr(footertext, '%'));
+	/* check which text fields have live strftime codes enabled */
+	has_title_dt  = title_datetime_updated  && titletext  &&
+	                titletext[0]  && strchr(titletext, '%');
+	has_sub_dt    = subtitle_datetime_updated && subtext    &&
+	                subtext[0]    && strchr(subtext, '%');
+	has_footer_dt = footer_datetime_updated   && footertext &&
+	                footertext[0] && strchr(footertext, '%');
+	need_timer = has_title_dt || has_sub_dt || has_footer_dt;
+
+	/* snapshot initial formatted values */
+	if (has_title_dt)
+		fmtdatetime(last_title, sizeof(last_title), titletext);
+	if (has_sub_dt)
+		fmtdatetime(last_sub, sizeof(last_sub), subtext);
+	if (has_footer_dt)
+		fmtdatetime(last_footer, sizeof(last_footer), footertext);
 
 	caps = getcaps(dpy);
 	oldc = caps ? CAPS : INIT;
@@ -446,8 +458,33 @@ readpw(Display *dpy, struct lock **locks, int nscreens, const char *hash)
 				die("mlock: select: %s\n", strerror(errno));
 		}
 		if (need_timer) {
-			/* redraw so drawmon picks up fresh strftime expansions */
-			drawall(dpy, locks, nscreens, oldc);
+			char now[256];
+			int redraw = 0;
+
+			if (has_title_dt) {
+				fmtdatetime(now, sizeof(now), titletext);
+				if (strcmp(now, last_title)) {
+					memcpy(last_title, now, sizeof(last_title));
+					redraw = 1;
+				}
+			}
+			if (has_sub_dt) {
+				fmtdatetime(now, sizeof(now), subtext);
+				if (strcmp(now, last_sub)) {
+					memcpy(last_sub, now, sizeof(last_sub));
+					redraw = 1;
+				}
+			}
+			if (has_footer_dt) {
+				fmtdatetime(now, sizeof(now), footertext);
+				if (strcmp(now, last_footer)) {
+					memcpy(last_footer, now, sizeof(last_footer));
+					redraw = 1;
+				}
+			}
+
+			if (redraw)
+				drawall(dpy, locks, nscreens, oldc);
 		}
 	}
 	explicit_bzero(&passwd, sizeof(passwd));
