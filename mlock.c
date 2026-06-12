@@ -47,9 +47,11 @@ enum {
 struct lock {
 	int screen;
 	Window root, win;
-	Pixmap pmap;
+	Pixmap pmap;		/* invisible cursor bitmap */
+	Pixmap buf;		/* off-screen pixmap for double buffering */
+	GC gc;			/* gc for XCopyArea (graphics_exposures=0) */
 	int w, h;
-	cairo_surface_t *surface;
+	cairo_surface_t *bufsurf;
 };
 
 struct xrandr {
@@ -277,10 +279,9 @@ drawlock(Display *dpy, struct lock *lock, int state)
 	XRRMonitorInfo *mons = NULL;
 	int nmon = 0, i;
 
-	cr = cairo_create(lock->surface);
+	cr = cairo_create(lock->bufsurf);
 
-	/* render everything off-screen, then paint atomically to avoid flicker */
-	cairo_push_group(cr);
+	/* render into off-screen pixmap */
 	cairo_set_source_rgb(cr, bgcol[state][0], bgcol[state][1], bgcol[state][2]);
 	cairo_paint(cr);
 
@@ -297,11 +298,12 @@ drawlock(Display *dpy, struct lock *lock, int state)
 	if (mons)
 		XRRFreeMonitors(mons);
 
-	cairo_pop_group_to_source(cr);
-	cairo_paint(cr);
-
 	cairo_destroy(cr);
-	cairo_surface_flush(lock->surface);
+	cairo_surface_flush(lock->bufsurf);
+
+	/* copy complete frame to window atomically */
+	XCopyArea(dpy, lock->buf, lock->win, lock->gc,
+	          0, 0, lock->w, lock->h, 0, 0);
 	XFlush(dpy);
 }
 
@@ -436,9 +438,20 @@ readpw(Display *dpy, struct lock **locks, int nscreens, const char *hash)
 					}
 					XResizeWindow(dpy, locks[s]->win,
 					              locks[s]->w, locks[s]->h);
-					cairo_xlib_surface_set_size(locks[s]->surface,
-					                            locks[s]->w,
-					                            locks[s]->h);
+					/* recreate off-screen buffer at new size */
+					cairo_surface_destroy(locks[s]->bufsurf);
+					XFreePixmap(dpy, locks[s]->buf);
+					locks[s]->buf = XCreatePixmap(dpy, locks[s]->win,
+					                              locks[s]->w,
+					                              locks[s]->h,
+					                              DefaultDepth(dpy,
+					                              locks[s]->screen));
+					locks[s]->bufsurf = cairo_xlib_surface_create(dpy,
+					                        locks[s]->buf,
+					                        DefaultVisual(dpy,
+					                        locks[s]->screen),
+					                        locks[s]->w,
+					                        locks[s]->h);
 					drawlock(dpy, locks[s], oldc);
 					break;
 				}
@@ -532,9 +545,17 @@ lockscreen(Display *dpy, int screen)
 	                                &color, &color, 0, 0);
 	XDefineCursor(dpy, lock->win, invisible);
 
-	lock->surface = cairo_xlib_surface_create(dpy, lock->win,
-	                                          DefaultVisual(dpy, lock->screen),
-	                                          lock->w, lock->h);
+	/* off-screen pixmap for tear-free double buffering */
+	lock->buf = XCreatePixmap(dpy, lock->win, lock->w, lock->h,
+	                          DefaultDepth(dpy, lock->screen));
+	lock->bufsurf = cairo_xlib_surface_create(dpy, lock->buf,
+	                                           DefaultVisual(dpy, lock->screen),
+	                                           lock->w, lock->h);
+	{
+		XGCValues gcv;
+		gcv.graphics_exposures = False;
+		lock->gc = XCreateGC(dpy, lock->win, GCGraphicsExposures, &gcv);
+	}
 
 	/* Try to grab mouse pointer *and* keyboard for 600ms, else fail the lock */
 	for (i = 0, ptgrab = kbgrab = -1; i < 6; i++) {
@@ -577,7 +598,9 @@ lockscreen(Display *dpy, int screen)
 	if (kbgrab != GrabSuccess)
 		fprintf(stderr, "mlock: unable to grab keyboard for screen %d\n",
 		        screen);
-	cairo_surface_destroy(lock->surface);
+	cairo_surface_destroy(lock->bufsurf);
+	XFreePixmap(dpy, lock->buf);
+	XFreeGC(dpy, lock->gc);
 	XDestroyWindow(dpy, lock->win);
 	XFreePixmap(dpy, lock->pmap);
 	free(lock);
@@ -590,7 +613,9 @@ unlockscreen(Display *dpy, struct lock *lock)
 	if (dpy == NULL || lock == NULL)
 		return;
 
-	cairo_surface_destroy(lock->surface);
+	cairo_surface_destroy(lock->bufsurf);
+	XFreePixmap(dpy, lock->buf);
+	XFreeGC(dpy, lock->gc);
 	XDestroyWindow(dpy, lock->win);
 	XFreePixmap(dpy, lock->pmap);
 	free(lock);
