@@ -20,6 +20,7 @@ mlock: $(OBJ)
 	$(CC) -o $@ $(OBJ) $(LDFLAGS)
 
 clean:
+	rm -f config.h
 	rm -f mlock $(OBJ) mlock-$(VERSION).tar.gz test/shim.so
 
 dist: clean

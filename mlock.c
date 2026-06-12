@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <grp.h>
+#include <locale.h>
 #include <pwd.h>
 #include <shadow.h>
 #include <stdarg.h>
@@ -535,6 +536,8 @@ int
 main(int argc, char **argv)
 {
 	struct lock **locks;
+
+	setlocale(LC_ALL, "");
 	struct passwd *pwd;
 	struct group *grp;
 	uid_t duid;
@@ -580,7 +583,7 @@ main(int argc, char **argv)
 #endif
 
 	/* the password buffer must never hit swap */
-	if (mlockall(MCL_CURRENT | MCL_FUTURE) < 0)
+	if (mlockall(MCL_CURRENT) < 0)
 		fprintf(stderr, "mlock: mlockall: %s\n", strerror(errno));
 
 	hash = gethash();

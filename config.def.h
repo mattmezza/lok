@@ -2,8 +2,8 @@
  * `make` copies this to config.h on first build; edit config.h. */
 
 /* user and group to drop privileges to */
-static const char *user  = "nobody";
-static const char *group = "nobody";
+static const char *user  = "matteo";
+static const char *group = "matteo";
 
 /* background color for each state */
 static const char *colorname[NUMCOLS] = {
