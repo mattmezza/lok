@@ -7,7 +7,7 @@ static const char *group = "matteo";
 
 /* background color for each state */
 static const char *colorname[NUMCOLS] = {
-	[INIT]      = "#1d2021",  /* idle, nothing typed yet */
+	[INIT]      = "#000000",  /* idle, nothing typed yet */
 	[INPUT]     = "#005577",  /* typing (alternates with INPUT_ALT) */
 	[INPUT_ALT] = "#227799",  /* typing (alternates with INPUT) */
 	[FAILED]    = "#cc3333",  /* wrong password */
@@ -25,9 +25,9 @@ static const char *emoji[NUMCOLS] = {
 static const int showemoji = 1;
 
 /* texts; set any to "" to disable it. CLI flags -t/-s/-b override these */
-static const char *titletext  = "This box is locked";
+static const char *titletext  = "This computer is locked";
 static const char *subtext    = "Type your password to unlock";
-static const char *footertext = "%A %d %B  ·  %H:%M"; /* strftime(3) codes are expanded */
+static const char *footertext = "%A %d %B  ·  %H:%M:%S"; /* strftime(3) codes are expanded */
 static const char *capstext   = "Caps Lock is on";    /* shown instead of subtext while caps lock is on */
 static const char *failformat  = "%d failed attempts"; /* shown instead of subtext after a wrong password */
 static const char *failformat1 = "1 failed attempt";   /* same, when there is exactly one */
