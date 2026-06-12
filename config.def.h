@@ -47,7 +47,7 @@ static const int textgap      = 24; /* vertical gap between emoji, title and sub
 static const int bottommargin = 36; /* footer distance from the bottom edge */
 
 /* show the FAILED color when the input is cleared (Esc, Ctrl-U), like slock */
-static const int failonclear = 1;
+static const int failonclear = 0;
 
 /* turn the monitor off via DPMS after this many seconds; 0 disables */
 static const int monitortime = 0;

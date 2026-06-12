@@ -278,6 +278,9 @@ drawlock(Display *dpy, struct lock *lock, int state)
 	int nmon = 0, i;
 
 	cr = cairo_create(lock->surface);
+
+	/* render everything off-screen, then paint atomically to avoid flicker */
+	cairo_push_group(cr);
 	cairo_set_source_rgb(cr, bgcol[state][0], bgcol[state][1], bgcol[state][2]);
 	cairo_paint(cr);
 
@@ -293,6 +296,9 @@ drawlock(Display *dpy, struct lock *lock, int state)
 	}
 	if (mons)
 		XRRFreeMonitors(mons);
+
+	cairo_pop_group_to_source(cr);
+	cairo_paint(cr);
 
 	cairo_destroy(cr);
 	cairo_surface_flush(lock->surface);
