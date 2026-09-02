@@ -13,7 +13,8 @@ but with proper text rendering and a three-wise-monkeys state machine.
 - 🐵 idle / 🙈 typing (it's not looking, promise) / 🙊 wrong password /
   🙉 caps lock warning — all emojis configurable per state
 - background color per state; the typing state alternates between two
-  colors on every keypress, slock style
+  colors on every keypress, slock style; this typing feedback can be
+  disabled
 - configurable title, subtitle and footer text, rendered with pango;
   any of them can be disabled
 - every text field (title, subtitle, footer) supports live
@@ -53,15 +54,16 @@ traffic happens).
 
 ## Configuration
 
-Major configuration lives in `config.def.h` (colors, emojis, texts, fonts,
-spacing, DPMS timeout, the user/group to drop privileges to). The first
-`make` copies it to `config.h`; edit that and recompile.
+Major configuration lives in `config.def.h` (colors, typing-background
+feedback, emojis, texts, fonts, spacing, DPMS timeout, and the user/group to
+drop privileges to). The first `make` copies it to `config.h`; edit that and
+recompile.
 
 The texts can also be overridden at runtime:
 
 ```
 lok [-v] [-t title] [-s subtitle] [-b bottomtext] \
-      [-T 0/1] [-S 0/1] [-B 0/1] [cmd [arg ...]]
+      [-T 0/1] [-S 0/1] [-B 0/1] [-A 0/1] [cmd [arg ...]]
 ```
 
 An empty string disables an element: `lok -t "" -s "" -b ""` gives you a
@@ -71,6 +73,11 @@ The `-T`/`-S`/`-B` flags enable or disable live `strftime(3)` expansion
 for the title, subtitle and footer respectively (default: 1, from
 `config.h`). When enabled, format specifiers such as `%H:%M` or `%A`
 are replaced with the current time and updated every second.
+
+The `-A` flag enables or disables the alternating typing background
+(default: 1, from `typing_background_feedback` in `config.h`). When disabled,
+the background stays at the idle color while typing; other typing visuals and
+the failed-password and Caps Lock backgrounds are unchanged.
 
 ```sh
 # footer still acts as a clock; title and subtitle are static
