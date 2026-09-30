@@ -77,3 +77,30 @@ setuid(uid_t uid)
 
 	return active() ? 0 : real(uid);
 }
+
+/* Force a blocked fingerprint scan for the password responsiveness test. */
+#include <security/pam_appl.h>
+#include <sys/stat.h>
+
+int
+lstat(const char *path, struct stat *st)
+{
+	int (*real)(const char *, struct stat *) = dlsym(RTLD_NEXT, "lstat");
+	if (active() && !strcmp(path, "/etc/pam.d/lok-fingerprint")) {
+		memset(st, 0, sizeof(*st));
+		st->st_mode = S_IFREG | 0644;
+		return 0;
+	}
+	return real(path, st);
+}
+
+int
+pam_start(const char *service, const char *username,
+          const struct pam_conv *conv, pam_handle_t **pamh)
+{
+	int (*real)(const char *, const char *, const struct pam_conv *,
+	            pam_handle_t **) = dlsym(RTLD_NEXT, "pam_start");
+	if (active())
+		for (;;) pause();
+	return real(service, username, conv, pamh);
+}

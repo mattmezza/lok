@@ -22,6 +22,7 @@ but with proper text rendering and a three-wise-monkeys state machine.
   controlled per-field via the `-T`/`-S`/`-B` flags or
   `title_datetime_updated`/`subtitle_datetime_updated`/
   `footer_datetime_updated` in `config.h`
+- asynchronous fingerprint unlocking through a dedicated fprintd PAM service
 - failed attempt counter
 - multi-monitor aware: the text stack is centered on every connected
   monitor (XRandR), and every X screen gets its own lock window
@@ -35,22 +36,57 @@ but with proper text rendering and a three-wise-monkeys state machine.
 
 ## Requirements
 
-libx11, libxext, libxrandr, pango (pangocairo) and a color emoji font.
+libx11, libxext, libxrandr, pango (pangocairo), PAM development headers/library and a color emoji font.
+Fingerprint unlocking also requires fprintd.
 On Arch:
 
 ```sh
-pacman -S --needed libx11 libxext libxrandr pango cairo noto-fonts-emoji
+sudo pacman -S --needed base-devel pkgconf libx11 libxext libxrandr pango cairo pam fprintd noto-fonts-emoji
 ```
 
 ## Installation
 
 ```sh
-sudo make clean install
+make
+sudo make install
+sudo make install-pam
 ```
 
 This installs `lok` setuid root (needed to read `/etc/shadow`; privileges
-are dropped to `nobody` immediately after, before any font rendering or X
-traffic happens).
+are dropped to `nobody` in the UI process before rendering and screen grabs).
+A separate PAM supervisor retains the original privilege, captures the real
+invoking user's name before the drop, and is forked before reading the password
+hash or opening X. Run `lok` as your normal user, **not `sudo lok`**, which would
+authenticate root.
+
+`install-pam` explicitly installs `/etc/pam.d/lok-fingerprint` as root-owned mode
+0644. It is separate from `install` to avoid replacing a locally customized PAM
+policy during routine upgrades. The supplied fingerprint-only policy is:
+
+```pam
+auth required pam_fprintd.so max-tries=3 timeout=30
+```
+
+Do not include `system-auth` or add `pam_permit` to this service. Only fingerprint
+success should satisfy this policy. Missing, symlinked, non-root-owned or
+writable-by-group/others service files disable fingerprint authentication;
+password unlocking still works. Remove this service file to disable fingerprint
+unlocking (uninstall leaves administrator-managed PAM policy in place).
+
+Scanning begins only after all screens lock. Either enrolled index finger can
+unlock; password input and Return remain usable during scanning. Failed scans,
+missing hardware and PAM errors retry automatically after two seconds. The PAM
+policy times out after 30 seconds; a supervisor also kills stalled attempts after
+40 seconds and retries. Successful authentication and exiting lok cancel the
+worker and close its fprintd connection, releasing the reader.
+
+To test on your laptop, first confirm `fprintd-verify "$USER"`, then run `lok`
+from a terminal in your X11 session. Try each enrolled index finger in separate
+locks, an unenrolled finger, and waiting through a timeout before retrying. Also
+type and submit your password while the reader is scanning. Confirm the reader
+is released afterward with another `fprintd-verify "$USER"`. To test the fallback,
+move `/etc/pam.d/lok-fingerprint` aside before launching lok, unlock with your
+password, then restore it. Keep a second session available during initial testing.
 
 ## Configuration
 
@@ -97,10 +133,27 @@ xss-lock -- lok &        # lock automatically on suspend/idle
 
 `make test` runs a headless end-to-end test (lock → wrong password →
 caps lock → correct password → unlock) under Xvfb, using an `LD_PRELOAD`
-shim to inject a known password hash so no root is needed. Requires
+shim to inject a known password hash and a deliberately blocked PAM worker,
+so no root is needed and password responsiveness/worker cancellation are tested.
+Fork/socket tests also cover fingerprint success, failure, refused prompts,
+missing/unsafe PAM policy, timeouts, retries, cleanup and abrupt locker exit. Requires
 `xorg-server-xvfb`, `xdotool` and `openssl`.
 
 ## Security notes
+
+Fingerprint authentication adds a small privileged supervisor and PAM child.
+The UI receives a single success byte on an unnamed socketpair; there is no
+public socket, PID-based signal unlock, environment-selected identity or PAM
+service, and no password sent to PAM. Only the supervisor can send success, after
+its child exits normally with successful `pam_authenticate` and `pam_end`.
+PAM prompts are rejected. The PAM child closes the UI socket, and the post-lock
+command closes it before exec. EOF on UI death cancels/reaps the PAM child;
+normal unlock waits for cleanup before destroying lock windows. The supervisor uses root in all UID slots on setuid launches and disables
+core dumps to prevent caller signals or inspection. It
+processes only a start byte and cancellation; it never parses user-supplied
+commands. Root-owned PAM configuration and its modules remain trusted code.
+The shipped policy authenticates fingerprints only; it does not add PAM account
+or session management to lok's existing password policy.
 
 The usual X11 locker caveats apply: lok grabs the keyboard and pointer
 and disables the OOM killer for itself, but it cannot stop someone from

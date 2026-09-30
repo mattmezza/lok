@@ -4,3 +4,4 @@ config.h
 test/shim.so
 lok-*.tar.gz
 .tmux-session
+test/fingerprint
