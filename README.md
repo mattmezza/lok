@@ -70,7 +70,8 @@ auth required pam_fprintd.so max-tries=3 timeout=30
 Do not include `system-auth` or add `pam_permit` to this service. Only fingerprint
 success should satisfy this policy. Missing, symlinked, non-root-owned or
 writable-by-group/others service files disable fingerprint authentication;
-password unlocking still works. Remove this service file to disable fingerprint
+password unlocking still works. Set `fingerprint_enabled = 0` in `config.h`
+and recompile, or remove this service file to disable fingerprint
 unlocking (uninstall leaves administrator-managed PAM policy in place).
 
 Scanning begins only after all screens lock. Either enrolled index finger can
@@ -94,6 +95,12 @@ Major configuration lives in `config.def.h` (colors, typing-background
 feedback, emojis, texts, fonts, spacing, DPMS timeout, and the user/group to
 drop privileges to). The first `make` copies it to `config.h`; edit that and
 recompile.
+
+Fingerprint unlocking is enabled by default (`fingerprint_enabled = 1`). Set it
+to `0` to disable the fingerprint worker and use password unlocking only.
+The subtitle uses `fingerprint_subtext` when enabled ("Type your password or use
+fingerprint to unlock") and `subtext` when disabled ("Type your password to
+unlock"). The `-s` flag overrides either subtitle.
 
 The texts can also be overridden at runtime:
 
