@@ -41,7 +41,7 @@ Fingerprint unlocking also requires fprintd.
 On Arch:
 
 ```sh
-sudo pacman -S --needed base-devel pkgconf libx11 libxext libxrandr pango cairo pam fprintd noto-fonts-emoji
+sudo pacman -S --needed base-devel pkgconf libx11 libxext libxrandr pango cairo glib2 pam fprintd noto-fonts-emoji
 ```
 
 ## Installation
@@ -74,9 +74,23 @@ password unlocking still works. Set `fingerprint_enabled = 0` in `config.h`
 and recompile, or remove this service file to disable fingerprint
 unlocking (uninstall leaves administrator-managed PAM policy in place).
 
+A circular fingerprint indicator appears below the subtitle when fingerprint
+unlocking is enabled. Set `show_fingerprint_icon = 0` in `config.h` and
+recompile to hide it and skip D-Bus monitoring while keeping fingerprint
+unlocking enabled. The default is `1`. It is muted while waiting and bright while fprintd reports
+finger contact. Failed scans display a red cross for three seconds, then return
+to waiting as authentication retries. If the worker becomes unavailable, the
+cross remains visible; password input stays available. Contact feedback depends
+on the device driver reporting fprintd's `finger-present` property. The Broadcom
+CV3+ TOD driver 6.4.062.0 did not emit contact changes in a live verification
+test (retry and match results were emitted), so it cannot currently provide
+touch-triggered brightness. Contact pulses from supporting drivers remain
+visible for at least 250 ms. D-Bus events
+are advisory only: only the isolated PAM worker can authorize an unlock.
+
 Scanning begins only after all screens lock. Either enrolled index finger can
 unlock; password input and Return remain usable during scanning. Failed scans,
-missing hardware and PAM errors retry automatically after two seconds. The PAM
+missing hardware and PAM errors retry automatically after three seconds. The PAM
 policy times out after 30 seconds; a supervisor also kills stalled attempts after
 40 seconds and retries. Successful authentication and exiting lok cancel the
 worker and close its fprintd connection, releasing the reader.

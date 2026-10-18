@@ -68,7 +68,7 @@ static double bgcol[NUMCOLS][3];
 static double fgcol[3], dimcol[3];
 static int failcount = 0;
 static int caps = 0;
-static struct fingerprint fingerprint = { -1, -1 };
+static struct fingerprint fingerprint = { .fd = -1, .pid = -1 };
 
 static void
 stopfingerprint(void)
@@ -199,6 +199,43 @@ fmtdatetime(char *buf, size_t n, const char *fmt)
 		buf[0] = '\0';
 }
 
+/* Vector fingerprint: transparent between rounded concentric ridges. */
+static void
+drawfingerprint(cairo_t *cr, double x, double y)
+{
+	int i;
+	double alpha = fingerprint.state == FP_READING ? 1.0 : 0.28;
+	cairo_save(cr);
+	cairo_translate(cr, x, y);
+	cairo_new_path(cr);
+	cairo_set_line_width(cr, 2.2);
+	cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+	cairo_set_source_rgba(cr, fgcol[0], fgcol[1], fgcol[2], alpha);
+	for (i = 0; i < 4; i++) {
+		double r = 6 + i * 4;
+		cairo_move_to(cr, -r + 1, 20 - i);
+		cairo_curve_to(cr, -r + 3, 15, -r, 9, -r, -2);
+		cairo_arc(cr, 0, -2, r, 3.141592654, 6.283185307);
+		cairo_curve_to(cr, r, 10, r - 4, 17, r - 6, 21 - i);
+		cairo_stroke(cr);
+	}
+	cairo_move_to(cr, 0, -2);
+	cairo_curve_to(cr, -2, 5, 3, 12, 0, 21);
+	cairo_stroke(cr);
+	if (fingerprint.state == FP_FAILED || fingerprint.fd < 0) {
+		cairo_set_source_rgb(cr, 0.95, 0.28, 0.30);
+		cairo_arc(cr, 21, 21, 9, 0, 6.283185307);
+		cairo_fill(cr);
+		cairo_set_source_rgb(cr, 1, 1, 1);
+		cairo_move_to(cr, 18, 18);
+		cairo_line_to(cr, 24, 24);
+		cairo_move_to(cr, 24, 18);
+		cairo_line_to(cr, 18, 24);
+		cairo_stroke(cr);
+	}
+	cairo_restore(cr);
+}
+
 /* draw the emoji/title/subtext stack centered in the given rectangle,
  * plus the footer at its bottom edge.
  * Text fields whose datetime_updated flag is set and contain '%' are
@@ -261,6 +298,9 @@ drawmon(cairo_t *cr, int mx, int my, int mw, int mh, int state)
 		y += h[i] + textgap;
 		g_object_unref(lay[i]);
 	}
+
+	if (fingerprint_enabled && show_fingerprint_icon)
+		drawfingerprint(cr, mx + mw / 2.0, y + 42);
 
 	/* footer — expand strftime codes when enabled */
 	footer = footertext;
@@ -481,8 +521,14 @@ readpw(Display *dpy, struct lock **locks, int nscreens, const char *hash)
 		if (!running)
 			break;
 
-		if (fingerprint_result(&fingerprint))
-			break;
+		{
+			enum fingerprint_state previous = fingerprint.state;
+			int previous_fd = fingerprint.fd;
+			if (fingerprint_result(&fingerprint))
+				break;
+			if (previous != fingerprint.state || previous_fd != fingerprint.fd)
+				drawall(dpy, locks, nscreens, oldc);
+		}
 		FD_ZERO(&fds);
 		FD_SET(xfd, &fds);
 		maxfd = xfd;
@@ -493,7 +539,11 @@ readpw(Display *dpy, struct lock **locks, int nscreens, const char *hash)
 		}
 		tv.tv_sec = 1;
 		tv.tv_usec = 0;
-		if (select(maxfd + 1, &fds, NULL, NULL, need_timer ? &tv : NULL) < 0) {
+		if (fingerprint_enabled && show_fingerprint_icon) {
+			tv.tv_sec = 0;
+			tv.tv_usec = 50000;
+		}
+		if (select(maxfd + 1, &fds, NULL, NULL, (need_timer || (fingerprint_enabled && show_fingerprint_icon)) ? &tv : NULL) < 0) {
 			if (errno != EINTR)
 				die("lok: select: %s\n", strerror(errno));
 		}
@@ -800,7 +850,7 @@ main(int argc, char **argv)
 	}
 
 	/* All screens are locked and the post-lock child has no auth socket. */
-	fingerprint_start(&fingerprint);
+	fingerprint_start(&fingerprint, show_fingerprint_icon);
 
 	/* Wait for either password or confirmed fingerprint success. */
 	readpw(dpy, locks, nscreens, hash);

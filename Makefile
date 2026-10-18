@@ -46,7 +46,7 @@ uninstall:
 	rm -f $(DESTDIR)$(MANPREFIX)/man1/lok.1
 
 test: all
-	$(CC) $(CFLAGS) -o test/fingerprint test/fingerprint.c
+	$(CC) $(CFLAGS) -o test/fingerprint test/fingerprint.c $(shell $(PKG_CONFIG) --libs gio-2.0)
 	./test/fingerprint
 	sh test/run.sh
 

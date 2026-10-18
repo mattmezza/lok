@@ -4,6 +4,7 @@
 #include <poll.h>
 #include <signal.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/socket.h>
 #include <sys/prctl.h>
 #include <sys/stat.h>
@@ -13,15 +14,105 @@
 #include <unistd.h>
 #include <security/pam_appl.h>
 #include "fingerprint.h"
+#include <gio/gio.h>
 
 #ifndef FP_TIMEOUT
 #define FP_TIMEOUT 40
 #endif
 #ifndef FP_RETRY
-#define FP_RETRY 2
+#define FP_RETRY 3
 #endif
 #define FP_SERVICE "lok-fingerprint"
 #define FP_CONFIG "/etc/pam.d/" FP_SERVICE
+
+/* Advisory UI signals never participate in the PAM success channel. */
+static GDBusConnection *monitor_bus;
+static guint monitor_subscription;
+static gint64 failed_until, reading_until;
+static gboolean finger_present;
+
+/* Keep a short contact pulse visible even if press/release arrive together. */
+static void
+sensor_properties(GVariant *changed)
+{
+	gboolean present;
+	if (!g_variant_lookup(changed, "finger-present", "b", &present))
+		return;
+	if (present && !finger_present) {
+		reading_until = g_get_monotonic_time() + 250 * 1000;
+		failed_until = 0;
+	}
+	finger_present = present;
+}
+
+static void
+sensor_changed(GDBusConnection *bus, const gchar *sender, const gchar *path,
+               const gchar *interface, const gchar *signal, GVariant *parameters,
+               gpointer data)
+{
+	(void)bus; (void)sender; (void)path; (void)interface; (void)data;
+	if (!strcmp(signal, "PropertiesChanged")) {
+		const gchar *iface;
+		GVariant *changed, *invalid;
+		g_variant_get(parameters, "(&s@a{sv}@as)", &iface, &changed, &invalid);
+		if (!strcmp(iface, "net.reactivated.Fprint.Device"))
+			sensor_properties(changed);
+		g_variant_unref(changed);
+		g_variant_unref(invalid);
+	} else if (!strcmp(signal, "VerifyStatus")) {
+		const gchar *status;
+		gboolean done;
+		g_variant_get(parameters, "(&sb)", &status, &done);
+		if (strcmp(status, "verify-match")) {
+			failed_until = g_get_monotonic_time() + 3 * G_USEC_PER_SEC;
+			finger_present = FALSE;
+			reading_until = 0;
+		}
+	}
+}
+
+static void
+monitor_start(void)
+{
+#ifndef FP_NO_MONITOR
+	GVariant *reply, *properties;
+	const gchar *path;
+	GError *error = NULL;
+	monitor_bus = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
+	if (!monitor_bus) {
+		g_warning("lok: fingerprint feedback unavailable: %s", error->message);
+		g_clear_error(&error);
+		return;
+	}
+	reply = g_dbus_connection_call_sync(monitor_bus, "net.reactivated.Fprint",
+	        "/net/reactivated/Fprint/Manager", "net.reactivated.Fprint.Manager",
+	        "GetDefaultDevice", NULL, G_VARIANT_TYPE("(o)"),
+	        G_DBUS_CALL_FLAGS_NONE, 1000, NULL, &error);
+	if (!reply) {
+		g_warning("lok: fingerprint feedback unavailable: %s", error->message);
+		g_clear_error(&error);
+		g_clear_object(&monitor_bus);
+		return;
+	}
+	g_variant_get(reply, "(&o)", &path);
+	monitor_subscription = g_dbus_connection_signal_subscribe(monitor_bus,
+	        "net.reactivated.Fprint", NULL, NULL, path, NULL,
+	        G_DBUS_SIGNAL_FLAGS_NONE, sensor_changed, NULL, NULL);
+	/* Subscribe first, then take a snapshot to cover already-present fingers. */
+	properties = g_dbus_connection_call_sync(monitor_bus, "net.reactivated.Fprint",
+	        path, "org.freedesktop.DBus.Properties", "GetAll",
+	        g_variant_new("(s)", "net.reactivated.Fprint.Device"),
+	        G_VARIANT_TYPE("(a{sv})"), G_DBUS_CALL_FLAGS_NONE, 1000, NULL, NULL);
+	if (properties) {
+		GVariant *changed;
+		g_variant_get(properties, "(@a{sv})", &changed);
+		sensor_properties(changed);
+		g_variant_unref(changed);
+		g_variant_unref(properties);
+	}
+	g_variant_unref(reply);
+#endif
+}
 
 /* No password prompts or user selection: only informational PAM messages. */
 static int
@@ -110,10 +201,14 @@ supervise(int fd, const char *username)
 					(void)send(fd, &command, 1, MSG_NOSIGNAL);
 					break;
 				}
+				command = 'F';
+				(void)send(fd, &command, 1, MSG_NOSIGNAL | MSG_DONTWAIT);
 				retry = now() + FP_RETRY;
 			} else if (rc < 0 || now() >= deadline) {
 				reap(attempt);
 				attempt = -1;
+				command = 'F';
+				(void)send(fd, &command, 1, MSG_NOSIGNAL | MSG_DONTWAIT);
 				retry = now() + FP_RETRY;
 			}
 		}
@@ -142,6 +237,7 @@ fingerprint_prepare(struct fingerprint *fp, const char *username)
 	struct sigaction sa = { .sa_handler = SIG_DFL };
 	fp->fd = -1;
 	fp->pid = -1;
+	fp->state = FP_WAITING;
 	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sockets))
 		return 0;
 	fp->pid = fork();
@@ -174,9 +270,11 @@ fingerprint_prepare(struct fingerprint *fp, const char *username)
 }
 
 void
-fingerprint_start(struct fingerprint *fp)
+fingerprint_start(struct fingerprint *fp, int show_feedback)
 {
 	char command = 'S';
+	if (show_feedback && fp->fd >= 0)
+		monitor_start();
 	if (fp->fd >= 0 && send(fp->fd, &command, 1, MSG_NOSIGNAL) != 1)
 		fingerprint_stop(fp);
 }
@@ -186,9 +284,21 @@ fingerprint_result(struct fingerprint *fp)
 {
 	char result;
 	ssize_t n;
+	while (g_main_context_pending(NULL))
+		g_main_context_iteration(NULL, FALSE);
+	fp->state = g_get_monotonic_time() < failed_until ? FP_FAILED :
+	            (finger_present || g_get_monotonic_time() < reading_until) ?
+	            FP_READING : FP_WAITING;
 	if (fp->fd < 0)
 		return 0;
 	n = recv(fp->fd, &result, 1, MSG_DONTWAIT);
+	if (n == 1 && result == 'F') {
+		failed_until = g_get_monotonic_time() + 3 * G_USEC_PER_SEC;
+		finger_present = FALSE;
+		reading_until = 0;
+		fp->state = FP_FAILED;
+		return 0;
+	}
 	if (n == 1 && result == 'Y')
 		return 1;
 	if (n == 0 || n > 0 || (n < 0 && errno != EAGAIN && errno != EINTR))
@@ -200,6 +310,13 @@ void
 fingerprint_stop(struct fingerprint *fp)
 {
 	int status;
+	if (monitor_bus) {
+		if (monitor_subscription)
+			g_dbus_connection_signal_unsubscribe(monitor_bus, monitor_subscription);
+		g_object_unref(monitor_bus);
+		monitor_bus = NULL;
+		monitor_subscription = 0;
+	}
 	if (fp->fd >= 0)
 		close(fp->fd);
 	fp->fd = -1;
@@ -207,4 +324,6 @@ fingerprint_stop(struct fingerprint *fp)
 		while (waitpid(fp->pid, &status, 0) < 0 && errno == EINTR)
 			;
 	fp->pid = -1;
+	finger_present = FALSE;
+	failed_until = reading_until = 0;
 }

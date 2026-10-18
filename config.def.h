@@ -29,6 +29,8 @@ static const int showemoji = 1;
 
 /* enable fingerprint unlocking through the dedicated PAM service */
 static const int fingerprint_enabled = 1;
+/* show sensor activity; disabling this keeps fingerprint unlocking enabled */
+static const int show_fingerprint_icon = 1;
 
 /* texts; set any to "" to disable it. CLI flags -t/-s/-b override these */
 static const char *titletext  = "This computer is locked";

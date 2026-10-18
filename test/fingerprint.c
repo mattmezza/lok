@@ -1,5 +1,6 @@
 /* Exercise real fork/socket/timeout/reaping logic with a fake PAM backend.
  * No production environment variables or authentication bypasses are added. */
+#define FP_NO_MONITOR
 #define FP_TIMEOUT 1
 #define FP_RETRY 1
 #define lstat fake_lstat
@@ -73,7 +74,7 @@ check(int scenario)
 	supervisor = fp.pid;
 	pfd = (struct pollfd){ reports[0], POLLIN, 0 };
 	assert(poll(&pfd, 1, 200) == 0); /* no scans before locking */
-	fingerprint_start(&fp);
+	fingerprint_start(&fp, 0);
 	until = now() + (scenario == HANG || scenario == FAILURE ? 4 : 2);
 	while (now() < until) {
 		pid_t pid;
@@ -129,7 +130,7 @@ check_parent_exit(void)
 		close(channel[0]);
 		assert(fingerprint_prepare(&fp, "invoking-user"));
 		assert(write(channel[1], &fp.pid, sizeof(fp.pid)) == sizeof(fp.pid));
-		fingerprint_start(&fp);
+		fingerprint_start(&fp, 0);
 		for (;;) pause();
 	}
 	close(channel[1]);
@@ -145,12 +146,44 @@ check_parent_exit(void)
 	close(channel[0]); close(reports[0]); close(reports[1]);
 }
 
+static void
+check_feedback(void)
+{
+	GVariantBuilder changed, invalid;
+	GVariant *event;
+	struct fingerprint fp = { .fd = -1, .pid = -1 };
+	g_variant_builder_init(&changed, G_VARIANT_TYPE("a{sv}"));
+	g_variant_builder_add(&changed, "{sv}", "finger-present", g_variant_new_boolean(TRUE));
+	g_variant_builder_init(&invalid, G_VARIANT_TYPE("as"));
+	event = g_variant_ref_sink(g_variant_new("(sa{sv}as)",
+	        "net.reactivated.Fprint.Device", &changed, &invalid));
+	sensor_changed(NULL, NULL, NULL, NULL, "PropertiesChanged", event, NULL);
+	g_variant_unref(event);
+	assert(!fingerprint_result(&fp) && fp.state == FP_READING);
+	/* Fast release before the next UI poll must not erase contact feedback. */
+	g_variant_builder_init(&changed, G_VARIANT_TYPE("a{sv}"));
+	g_variant_builder_add(&changed, "{sv}", "finger-present", g_variant_new_boolean(FALSE));
+	event = g_variant_ref_sink(g_variant_builder_end(&changed));
+	sensor_properties(event);
+	g_variant_unref(event);
+	assert(!fingerprint_result(&fp) && fp.state == FP_READING);
+	reading_until = g_get_monotonic_time() - 1;
+	assert(!fingerprint_result(&fp) && fp.state == FP_WAITING);
+	event = g_variant_ref_sink(g_variant_new("(sb)", "verify-no-match", FALSE));
+	sensor_changed(NULL, NULL, NULL, NULL, "VerifyStatus", event, NULL);
+	g_variant_unref(event);
+	assert(!fingerprint_result(&fp) && fp.state == FP_FAILED);
+	failed_until = g_get_monotonic_time() - 1;
+	assert(!fingerprint_result(&fp) && fp.state == FP_WAITING);
+}
+
 #include <sys/prctl.h>
 int
 main(void)
 {
 	int i;
 	assert(prctl(PR_SET_CHILD_SUBREAPER, 1) == 0);
+	check_feedback();
 	for (i = SUCCESS; i <= BAD_CONFIG; i++)
 		check(i);
 	check_bad_message();

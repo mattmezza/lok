@@ -6,7 +6,7 @@ PREFIX = /usr/local
 MANPREFIX = $(PREFIX)/share/man
 
 PKG_CONFIG = pkg-config
-PKGS = x11 xext xrandr pangocairo
+PKGS = x11 xext xrandr pangocairo gio-2.0
 
 # includes and libs
 INCS = `$(PKG_CONFIG) --cflags $(PKGS)`
