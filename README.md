@@ -46,6 +46,41 @@ sudo pacman -S --needed base-devel pkgconf libx11 libxext libxrandr pango cairo 
 
 ## Installation
 
+### Prebuilt release
+
+GitHub Releases provides a statically linked `lok` for Linux x86-64 and ARM64.
+Run it in an X11 session with local user accounts, Fontconfig and a color emoji font.
+Fingerprint unlocking also requires glibc, Linux-PAM and fprintd on the host
+for the bundled PAM helper.
+
+Install the latest release.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mattmezza/lok/main/install.sh | sudo sh -s -- install
+```
+
+Upgrade an existing installation.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mattmezza/lok/main/install.sh | sudo sh -s -- upgrade
+```
+
+Append a tag such as `v0.1.0` to either command to choose a specific release.
+The installer verifies the release archive's SHA-256 checksum before installing
+the setuid locker to `/usr/local/bin/lok`. Run `lok -v` to check the installed
+version. Run `lok` as your normal user to lock your session.
+
+Uninstall the locker, PAM helper and manual page.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mattmezza/lok/main/install.sh | sudo sh -s -- uninstall
+```
+
+The installer creates `/etc/pam.d/lok-fingerprint` when it is missing. Existing
+PAM policy is preserved during install, upgrade and uninstall.
+
+### Build from source
+
 ```sh
 make
 sudo make install
@@ -159,6 +194,23 @@ so no root is needed and password responsiveness/worker cancellation are tested.
 Fork/socket tests also cover fingerprint success, failure, refused prompts,
 missing/unsafe PAM policy, timeouts, retries, cleanup and abrupt locker exit. Requires
 `xorg-server-xvfb`, `xdotool` and `openssl`.
+
+## Cutting a release
+
+Push the release commit and authenticate the GitHub CLI with `gh auth login`.
+
+```sh
+make release name=v0.1.0
+```
+
+The target tags the current commit, creates a draft GitHub Release and starts
+Actions for that tag. Actions verifies both static binaries, uploads the
+archives and checksums, and publishes the draft. A failed run leaves the draft
+in place for a retry.
+
+Binary archives include third-party license notices. The release's library
+source archives and tagged source tree provide the materials to rebuild and
+relink `lok` using `.github/static.Dockerfile` and `make lok-static`.
 
 ## Security notes
 

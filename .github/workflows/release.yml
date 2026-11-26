@@ -1,0 +1,79 @@
+name: Build and publish release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency: release-${{ github.ref }}
+
+jobs:
+  build:
+    if: github.ref_type == 'tag'
+    name: Linux ${{ matrix.arch }}
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Build and package the release
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          docker build -t lok-static-build - < .github/static.Dockerfile
+          docker run --rm -v "$PWD:/src" -u "$(id -u):$(id -g)" -e ARCH -e GITHUB_REF_NAME \
+            lok-static-build sh -eu -c '
+              version=${GITHUB_REF_NAME#v}
+              make VERSION="$version" lok-static lok-pam
+              test "$(./lok-static -v)" = "lok-$version"
+              if readelf -lW lok-static | grep -q INTERP ||
+                 readelf -dW lok-static | grep -q NEEDED; then
+                echo "lok-static has a dynamic dependency" >&2
+                exit 1
+              fi
+              mkdir -p dist/package
+              install -s -m 755 lok-static dist/package/lok
+              install -s -m 700 lok-pam dist/package/lok-pam
+              sed "s/VERSION/$version/g" lok.1 > dist/package/lok.1
+              cp LICENSE pam.d/lok-fingerprint dist/package/
+              cp -R /usr/local/share/lok/licenses dist/package/
+              tar -C dist/package -czf "dist/lok-linux-$ARCH.tar.gz" lok lok-pam lok.1 lok-fingerprint LICENSE licenses
+              tar -C /usr/local/share/lok/sources -cf "dist/lok-library-sources-$ARCH.tar" .
+            '
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: lok-${{ matrix.arch }}
+          path: |
+            dist/lok-linux-*.tar.gz
+            dist/lok-library-sources-*.tar
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          pattern: lok-*
+          merge-multiple: true
+      - name: Publish the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true
+          sha256sum lok-linux-{x86_64,aarch64}.tar.gz lok-library-sources-{x86_64,aarch64}.tar > SHA256SUMS
+          gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber \
+            lok-linux-{x86_64,aarch64}.tar.gz lok-library-sources-{x86_64,aarch64}.tar SHA256SUMS
+          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false

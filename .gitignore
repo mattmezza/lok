@@ -1,4 +1,6 @@
 lok
+lok-static
+lok-pam
 *.o
 config.h
 test/shim.so

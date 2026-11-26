@@ -760,11 +760,14 @@ main(int argc, char **argv)
 		die("lok: getpwnam %s: %s\n", user,
 		    errno ? strerror(errno) : "user entry not found");
 	duid = pwd->pw_uid;
-	errno = 0;
-	if (!(grp = getgrnam(group)))
-		die("lok: getgrnam %s: %s\n", group,
-		    errno ? strerror(errno) : "group entry not found");
-	dgid = grp->gr_gid;
+	dgid = pwd->pw_gid;
+	if (group) {
+		errno = 0;
+		if (!(grp = getgrnam(group)))
+			die("lok: getgrnam %s: %s\n", group,
+			    errno ? strerror(errno) : "group entry not found");
+		dgid = grp->gr_gid;
+	}
 
 #ifdef __linux__
 	dontkillme();

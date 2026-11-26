@@ -5,6 +5,7 @@
 #define FP_RETRY 1
 #define lstat fake_lstat
 #include "../fingerprint.c"
+#include "../fingerprint-pam.c"
 #undef lstat
 #include <assert.h>
 #include <stdio.h>

@@ -1,5 +1,5 @@
 # lok version
-VERSION = 0.1
+VERSION = 0.1.0
 
 # paths
 PREFIX = /usr/local
@@ -11,6 +11,7 @@ PKGS = x11 xext xrandr pangocairo gio-2.0
 # includes and libs
 INCS = `$(PKG_CONFIG) --cflags $(PKGS)`
 LIBS = `$(PKG_CONFIG) --libs $(PKGS)` -lcrypt -lpam
+STATIC_LIBS = `$(PKG_CONFIG) --static --libs $(PKGS)` -lcrypt -lstdc++
 
 # flags
 CPPFLAGS = -DVERSION=\"$(VERSION)\" -D_DEFAULT_SOURCE -D_XOPEN_SOURCE=700

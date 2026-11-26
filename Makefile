@@ -3,7 +3,7 @@
 
 include config.mk
 
-SRC = lok.c fingerprint.c
+SRC = lok.c fingerprint.c fingerprint-pam.c
 OBJ = $(SRC:.c=.o)
 
 all: lok
@@ -19,14 +19,21 @@ config.h:
 lok: $(OBJ)
 	$(CC) -o $@ $(OBJ) $(LDFLAGS)
 
+lok-static: lok.c fingerprint.c static-loader.c arg.h config.h config.mk fingerprint.h
+	$(CC) $(CFLAGS) -DLOK_PAM_HELPER=\"$(PREFIX)/libexec/lok-pam\" -static \
+		-Wl,--wrap=dlopen -o $@ lok.c fingerprint.c static-loader.c $(STATIC_LIBS)
+
+lok-pam: fingerprint-pam.c config.mk fingerprint.h
+	$(CC) $(CFLAGS) -DLOK_PAM_MAIN -o $@ fingerprint-pam.c -lpam
+
 clean:
 	rm -f config.h
-	rm -f lok $(OBJ) lok-$(VERSION).tar.gz test/shim.so test/fingerprint
+	rm -f lok lok-static lok-pam $(OBJ) lok-$(VERSION).tar.gz test/shim.so test/fingerprint
 
 dist: clean
 	mkdir -p lok-$(VERSION)
 	cp -R LICENSE Makefile README.md config.mk config.def.h arg.h \
-		lok.1 fingerprint.h pam.d test $(SRC) lok-$(VERSION)
+		lok.1 fingerprint.h static-loader.c pam.d test $(SRC) lok-$(VERSION)
 	tar -cf - lok-$(VERSION) | gzip > lok-$(VERSION).tar.gz
 	rm -rf lok-$(VERSION)
 
@@ -50,4 +57,18 @@ test: all
 	./test/fingerprint
 	sh test/run.sh
 
-.PHONY: all clean dist install install-pam uninstall test
+release:
+	@set -eu; tag=$${name:-}; \
+	case "$$tag" in *[!v0-9.]*) tag= ;; esac; \
+	printf '%s\n' "$$tag" | LC_ALL=C grep -Exq 'v(0|[1-9][0-9]*)(\.(0|[1-9][0-9]*)){2}' \
+		|| { echo 'Usage: make release name=v0.1.0' >&2; exit 1; }; \
+	test -z "$$(git status --porcelain)" || { echo 'Commit the release changes first.' >&2; exit 1; }; \
+	git push origin "HEAD:refs/tags/$$tag"; \
+	if draft=$$(gh release view "$$tag" --json isDraft --jq .isDraft 2>/dev/null); then \
+		test "$$draft" = true || { echo "Release $$tag is already published." >&2; exit 1; }; \
+	else \
+		gh release create "$$tag" --verify-tag --draft --generate-notes --title "lok $$tag"; \
+	fi; \
+	gh workflow run release.yml --ref "$$tag"
+
+.PHONY: all clean dist install install-pam uninstall test release
