@@ -19,15 +19,14 @@ but with proper text rendering and a three-wise-monkeys state machine.
   any of them can be disabled
 - every text field (title, subtitle, footer) supports live
   `strftime(3)` expansion — any of them can act as a clock;
-  controlled per-field via the `-T`/`-S`/`-B` flags or
-  `title_datetime_updated`/`subtitle_datetime_updated`/
-  `footer_datetime_updated` in `config.h`
+  controlled per-field via the `-T`/`-S`/`-B` flags or the `[datetime]`
+  settings in `config.ini`
 - asynchronous fingerprint unlocking through a dedicated fprintd PAM service
 - failed attempt counter
 - multi-monitor aware: the text stack is centered on every connected
   monitor (XRandR), and every X screen gets its own lock window
 - wrong-password feedback via color, emoji and counter; optional
-  `failonclear` like slock
+  `fail_on_clear` like slock
 - optional DPMS timeout to turn the monitor off while locked
 - the whole process is locked in RAM (`mlockall(2)`), so the typed
   password can never end up in swap
@@ -105,14 +104,14 @@ auth required pam_fprintd.so max-tries=3 timeout=30
 Do not include `system-auth` or add `pam_permit` to this service. Only fingerprint
 success should satisfy this policy. Missing, symlinked, non-root-owned or
 writable-by-group/others service files disable fingerprint authentication;
-password unlocking still works. Set `fingerprint_enabled = 0` in `config.h`
-and recompile, or remove this service file to disable fingerprint
+password unlocking still works. Set `enabled = false` under `[fingerprint]`
+in `config.ini`, or remove this service file to disable fingerprint
 unlocking (uninstall leaves administrator-managed PAM policy in place).
 
 A circular fingerprint indicator appears below the subtitle when fingerprint
-unlocking is enabled. Set `show_fingerprint_icon = 0` in `config.h` and
-recompile to hide it and skip D-Bus monitoring while keeping fingerprint
-unlocking enabled. The default is `1`. It is muted while waiting and bright while fprintd reports
+unlocking is enabled. Set `show_icon = false` under `[fingerprint]` to hide it
+and skip D-Bus monitoring while keeping fingerprint unlocking enabled. The
+icon is muted while waiting and bright while fprintd reports
 finger contact. Failed scans display a red cross for three seconds, then return
 to waiting as authentication retries. If the worker becomes unavailable, the
 cross remains visible; password input stays available. Contact feedback depends
@@ -140,16 +139,25 @@ password, then restore it. Keep a second session available during initial testin
 
 ## Configuration
 
-Major configuration lives in `config.def.h` (colors, typing-background
-feedback, emojis, texts, fonts, spacing, DPMS timeout, and the user/group to
-drop privileges to). The first `make` copies it to `config.h`; edit that and
-recompile.
+lok reads `$XDG_CONFIG_HOME/lok/config.ini` at startup. With an unset, empty
+or relative `XDG_CONFIG_HOME`, it reads `~/.config/lok/config.ini`.
+The [example config](config.ini) lists every setting and its built-in default.
+Copy it from the repository or release archive, then edit it as your normal user.
 
-Fingerprint unlocking is enabled by default (`fingerprint_enabled = 1`). Set it
-to `0` to disable the fingerprint worker and use password unlocking only.
-The subtitle uses `fingerprint_subtext` when enabled ("Type your password or use
-fingerprint to unlock") and `subtext` when disabled ("Type your password to
-unlock"). The `-s` flag overrides either subtitle.
+```sh
+config_dir="${XDG_CONFIG_HOME:-$HOME/.config}"
+case "$config_dir" in /*) ;; *) config_dir="$HOME/.config" ;; esac
+mkdir -p "$config_dir/lok"
+cp -n config.ini "$config_dir/lok/config.ini"
+```
+
+You can keep just the settings you want to override. lok uses built-in defaults
+for missing or invalid settings. Changes take effect the next time lok starts.
+To migrate an older `config.h`, copy your custom values into the matching INI
+settings. The locker drops privileges to `nobody` and its primary group.
+
+The `[text]` setting `fingerprint_subtitle` applies when fingerprint unlocking
+is enabled. Otherwise lok uses `subtitle`. The `-s` flag overrides either one.
 
 The texts can also be overridden at runtime:
 
@@ -161,15 +169,12 @@ lok [-v] [-t title] [-s subtitle] [-b bottomtext] \
 An empty string disables an element: `lok -t "" -s "" -b ""` gives you a
 bare colored screen with just the monkey.
 
-The `-T`/`-S`/`-B` flags enable or disable live `strftime(3)` expansion
-for the title, subtitle and footer respectively (default: 1, from
-`config.h`). When enabled, format specifiers such as `%H:%M` or `%A`
+The `-T`/`-S`/`-B` flags override the `[datetime]` settings for the title,
+subtitle and footer. When enabled, `strftime(3)` specifiers such as `%H:%M` or `%A`
 are replaced with the current time and updated every second.
 
-The `-A` flag enables or disables the alternating typing background
-(default: 1, from `typing_background_feedback` in `config.h`). When disabled,
-the background stays at the idle color while typing; other typing visuals and
-the failed-password and Caps Lock backgrounds are unchanged.
+The `-A` flag overrides `[appearance]` `typing_background_feedback`, which
+defaults to `false`. Set it to `true` to alternate the background on each keypress.
 
 ```sh
 # footer still acts as a clock; title and subtitle are static

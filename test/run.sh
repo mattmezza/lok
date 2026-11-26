@@ -18,13 +18,24 @@ make >/dev/null
 cc -shared -fPIC -o test/shim.so test/shim.c
 
 HASH=$(openssl passwd -6 "$PASS")
+CONFIG_TMP=$(mktemp -d)
+export XDG_CONFIG_HOME="$CONFIG_TMP"
+mkdir "$CONFIG_TMP/lok"
+cat > "$CONFIG_TMP/lok/config.ini" <<'EOF'
+[colors]
+idle = #123456
+failed = not-an-x11-color
+[text]
+failed_attempt = Attempt %d %% %n
+EOF
 
 Xvfb "$DPY" -screen 0 1280x800x24 -ac >/dev/null 2>&1 &
 XVFB_PID=$!
 cleanup() {
-	[ -n "${LOK_PID:-}" ] && kill "$LOK_PID" 2>/dev/null
-	kill "$XVFB_PID" 2>/dev/null
-	wait 2>/dev/null
+	if [ -n "${LOK_PID:-}" ]; then kill "$LOK_PID" 2>/dev/null || true; fi
+	kill "$XVFB_PID" 2>/dev/null || true
+	wait 2>/dev/null || true
+	rm -r "$CONFIG_TMP"
 }
 trap cleanup EXIT
 sleep 1
@@ -40,11 +51,12 @@ xdo() {
 }
 export XDOTOOL_DISPLAY="$DPY" DISPLAY="$DPY"
 
-LOK_TEST_HASH="$HASH" LD_PRELOAD="$PWD/test/shim.so" ./lok &
+LOK_TEST_HASH="$HASH" LD_PRELOAD="$PWD/test/shim.so" ./lok 2> "$CONFIG_TMP/lok.log" &
 LOK_PID=$!
 sleep 2
 
-kill -0 "$LOK_PID" || { echo "FAIL: lok died on startup"; exit 1; }
+kill -0 "$LOK_PID" || { cat "$CONFIG_TMP/lok.log"; echo "FAIL: lok died on startup"; exit 1; }
+grep -Fq 'invalid [colors] failed in config.ini' "$CONFIG_TMP/lok.log"
 shot 1-init
 
 # typing state (alternating colors)
@@ -80,5 +92,6 @@ if kill -0 "$LOK_PID" 2>/dev/null; then
 fi
 wait "$LOK_PID" 2>/dev/null || { echo "FAIL: lok exited non-zero"; exit 1; }
 LOK_PID=
+cat "$CONFIG_TMP/lok.log"
 
 echo "PASS"

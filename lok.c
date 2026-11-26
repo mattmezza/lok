@@ -33,17 +33,9 @@
 
 #include "arg.h"
 #include "fingerprint.h"
+#include "settings.h"
 
 char *argv0;
-
-enum {
-	INIT,
-	INPUT,
-	INPUT_ALT,
-	FAILED,
-	CAPS,
-	NUMCOLS
-};
 
 struct lock {
 	int screen;
@@ -61,11 +53,8 @@ struct xrandr {
 	int errbase;
 };
 
-#include "config.h"
-
+static struct settings settings;
 static struct xrandr rr;
-static double bgcol[NUMCOLS][3];
-static double fgcol[3], dimcol[3];
 static int failcount = 0;
 static int caps = 0;
 static struct fingerprint fingerprint = { .fd = -1, .pid = -1 };
@@ -148,18 +137,6 @@ gethash(void)
 	return hash;
 }
 
-static void
-parsecolor(Display *dpy, const char *name, double *rgb)
-{
-	XColor c;
-
-	if (!XParseColor(dpy, DefaultColormap(dpy, DefaultScreen(dpy)), name, &c))
-		die("lok: cannot parse color \"%s\"\n", name);
-	rgb[0] = c.red   / 65535.0;
-	rgb[1] = c.green / 65535.0;
-	rgb[2] = c.blue  / 65535.0;
-}
-
 static int
 getcaps(Display *dpy)
 {
@@ -210,7 +187,8 @@ drawfingerprint(cairo_t *cr, double x, double y)
 	cairo_new_path(cr);
 	cairo_set_line_width(cr, 2.2);
 	cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
-	cairo_set_source_rgba(cr, fgcol[0], fgcol[1], fgcol[2], alpha);
+	cairo_set_source_rgba(cr, settings.foreground[0], settings.foreground[1],
+	                      settings.foreground[2], alpha);
 	for (i = 0; i < 4; i++) {
 		double r = 6 + i * 4;
 		cairo_move_to(cr, -r + 1, 20 - i);
@@ -236,9 +214,9 @@ drawfingerprint(cairo_t *cr, double x, double y)
 	cairo_restore(cr);
 }
 
-/* draw the emoji/title/subtext stack centered in the given rectangle,
+/* draw the emoji/title/subtitle stack centered in the given rectangle,
  * plus the footer at its bottom edge.
- * Text fields whose datetime_updated flag is set and contain '%' are
+ * Text fields with live datetime expansion enabled and containing '%' are
  * expanded with strftime(3) every second. */
 static void
 drawmon(cairo_t *cr, int mx, int my, int mw, int mh, int state)
@@ -246,75 +224,78 @@ drawmon(cairo_t *cr, int mx, int my, int mw, int mh, int state)
 	PangoLayout *lay[3], *flay;
 	const double *col[3];
 	const char *sub, *title, *footer;
-	char titlebuf[256], subbuf[256], failbuf[128], footbuf[256];
+	char titlebuf[256], subbuf[256], footbuf[256];
+	char *attempts = NULL;
 	int w[3], h[3], fw, fh, n = 0, i, total = 0, y;
 
 	/* title — expand strftime codes when enabled */
-	title = titletext;
-	if (titletext && titletext[0] && title_datetime_updated &&
-	    strchr(titletext, '%')) {
-		fmtdatetime(titlebuf, sizeof(titlebuf), titletext);
+	title = settings.title;
+	if (settings.title && settings.title[0] && settings.title_datetime &&
+	    strchr(settings.title, '%')) {
+		fmtdatetime(titlebuf, sizeof(titlebuf), settings.title);
 		if (titlebuf[0])
 			title = titlebuf;
 	}
 
 	/* subtitle — expand strftime codes when enabled */
-	sub = subtext;
+	sub = settings.subtitle;
 	if (state == FAILED && failcount > 0) {
-		snprintf(failbuf, sizeof(failbuf),
-		         failcount == 1 ? failformat1 : failformat, failcount);
-		sub = failbuf;
+		attempts = settings_format_attempts(failcount == 1 ? settings.failed_attempt :
+		                                    settings.failed_attempts, failcount);
+		sub = attempts;
 	} else if (state == CAPS) {
-		sub = capstext;
-	} else if (sub && sub[0] && subtitle_datetime_updated &&
+		sub = settings.caps_lock;
+	} else if (sub && sub[0] && settings.subtitle_datetime &&
 	           strchr(sub, '%')) {
 		fmtdatetime(subbuf, sizeof(subbuf), sub);
 		if (subbuf[0])
 			sub = subbuf;
 	}
 
-	if (showemoji && emoji[state] && emoji[state][0]) {
-		lay[n] = mklayout(cr, emojifont, emoji[state]);
-		col[n++] = fgcol;
+	if (settings.show_emoji && settings.emoji[state] && settings.emoji[state][0]) {
+		lay[n] = mklayout(cr, settings.emoji_font, settings.emoji[state]);
+		col[n++] = settings.foreground;
 	}
 	if (title && title[0]) {
-		lay[n] = mklayout(cr, titlefont, title);
-		col[n++] = fgcol;
+		lay[n] = mklayout(cr, settings.title_font, title);
+		col[n++] = settings.foreground;
 	}
 	if (sub && sub[0]) {
-		lay[n] = mklayout(cr, subfont, sub);
-		col[n++] = dimcol;
+		lay[n] = mklayout(cr, settings.subtitle_font, sub);
+		col[n++] = settings.dim_foreground;
 	}
+	g_free(attempts);
 
 	for (i = 0; i < n; i++) {
 		pango_layout_get_pixel_size(lay[i], &w[i], &h[i]);
-		total += h[i] + (i > 0 ? textgap : 0);
+		total += h[i] + (i > 0 ? settings.text_gap : 0);
 	}
 	y = my + (mh - total) / 2;
 	for (i = 0; i < n; i++) {
 		cairo_set_source_rgb(cr, col[i][0], col[i][1], col[i][2]);
 		cairo_move_to(cr, mx + (mw - w[i]) / 2, y);
 		pango_cairo_show_layout(cr, lay[i]);
-		y += h[i] + textgap;
+		y += h[i] + settings.text_gap;
 		g_object_unref(lay[i]);
 	}
 
-	if (fingerprint_enabled && show_fingerprint_icon)
+	if (settings.fingerprint_enabled && settings.show_fingerprint_icon)
 		drawfingerprint(cr, mx + mw / 2.0, y + 42);
 
 	/* footer — expand strftime codes when enabled */
-	footer = footertext;
-	if (footertext && footertext[0] && footer_datetime_updated &&
-	    strchr(footertext, '%')) {
-		fmtdatetime(footbuf, sizeof(footbuf), footertext);
+	footer = settings.footer;
+	if (settings.footer && settings.footer[0] && settings.footer_datetime &&
+	    strchr(settings.footer, '%')) {
+		fmtdatetime(footbuf, sizeof(footbuf), settings.footer);
 		if (footbuf[0])
 			footer = footbuf;
 	}
 	if (footer && footer[0]) {
-		flay = mklayout(cr, footerfont, footer);
+		flay = mklayout(cr, settings.footer_font, footer);
 		pango_layout_get_pixel_size(flay, &fw, &fh);
-		cairo_set_source_rgb(cr, dimcol[0], dimcol[1], dimcol[2]);
-		cairo_move_to(cr, mx + (mw - fw) / 2, my + mh - fh - bottommargin);
+		cairo_set_source_rgb(cr, settings.dim_foreground[0], settings.dim_foreground[1],
+		                     settings.dim_foreground[2]);
+		cairo_move_to(cr, mx + (mw - fw) / 2, my + mh - fh - settings.bottom_margin);
 		pango_cairo_show_layout(cr, flay);
 		g_object_unref(flay);
 	}
@@ -327,15 +308,16 @@ drawlock(Display *dpy, struct lock *lock, int state)
 	XRRMonitorInfo *mons = NULL;
 	int nmon = 0, i, bgstate = state;
 
-	if (!typing_background_feedback &&
+	if (!settings.typing_background_feedback &&
 	    (state == INPUT || state == INPUT_ALT))
 		bgstate = INIT;
 
 	cr = cairo_create(lock->bufsurf);
 
 	/* render into off-screen pixmap */
-	cairo_set_source_rgb(cr, bgcol[bgstate][0], bgcol[bgstate][1],
-	                     bgcol[bgstate][2]);
+	cairo_set_source_rgb(cr, settings.background[bgstate][0],
+	                     settings.background[bgstate][1],
+	                     settings.background[bgstate][2]);
 	cairo_paint(cr);
 
 	/* draw once per physical monitor so nothing spans a bezel */
@@ -383,26 +365,27 @@ readpw(Display *dpy, struct lock **locks, int nscreens, const char *hash)
 	int oldc, color;
 	int xfd = ConnectionNumber(dpy), maxfd;
 	int need_timer, has_title_dt, has_sub_dt, has_footer_dt;
+	int fingerprint_feedback = settings.fingerprint_enabled && settings.show_fingerprint_icon;
 	char last_title[256], last_sub[256], last_footer[256];
 	fd_set fds;
 	struct timeval tv;
 
 	/* check which text fields have live strftime codes enabled */
-	has_title_dt  = title_datetime_updated  && titletext  &&
-	                titletext[0]  && strchr(titletext, '%');
-	has_sub_dt    = subtitle_datetime_updated && subtext    &&
-	                subtext[0]    && strchr(subtext, '%');
-	has_footer_dt = footer_datetime_updated   && footertext &&
-	                footertext[0] && strchr(footertext, '%');
+	has_title_dt  = settings.title_datetime  && settings.title  &&
+	                settings.title[0]  && strchr(settings.title, '%');
+	has_sub_dt    = settings.subtitle_datetime && settings.subtitle    &&
+	                settings.subtitle[0]    && strchr(settings.subtitle, '%');
+	has_footer_dt = settings.footer_datetime   && settings.footer &&
+	                settings.footer[0] && strchr(settings.footer, '%');
 	need_timer = has_title_dt || has_sub_dt || has_footer_dt;
 
 	/* snapshot initial formatted values */
 	if (has_title_dt)
-		fmtdatetime(last_title, sizeof(last_title), titletext);
+		fmtdatetime(last_title, sizeof(last_title), settings.title);
 	if (has_sub_dt)
-		fmtdatetime(last_sub, sizeof(last_sub), subtext);
+		fmtdatetime(last_sub, sizeof(last_sub), settings.subtitle);
 	if (has_footer_dt)
-		fmtdatetime(last_footer, sizeof(last_footer), footertext);
+		fmtdatetime(last_footer, sizeof(last_footer), settings.footer);
 
 	caps = getcaps(dpy);
 	oldc = caps ? CAPS : INIT;
@@ -467,7 +450,7 @@ readpw(Display *dpy, struct lock **locks, int nscreens, const char *hash)
 				caps = getcaps(dpy);
 				color = caps ? CAPS
 				             : len ? (alt ? INPUT_ALT : INPUT)
-				                   : (failure || failonclear) ? FAILED
+				                   : (failure || settings.fail_on_clear) ? FAILED
 				                                               : INIT;
 				if (running && (oldc != color || dirty)) {
 					drawall(dpy, locks, nscreens, color);
@@ -539,11 +522,12 @@ readpw(Display *dpy, struct lock **locks, int nscreens, const char *hash)
 		}
 		tv.tv_sec = 1;
 		tv.tv_usec = 0;
-		if (fingerprint_enabled && show_fingerprint_icon) {
+		if (fingerprint_feedback) {
 			tv.tv_sec = 0;
 			tv.tv_usec = 50000;
 		}
-		if (select(maxfd + 1, &fds, NULL, NULL, (need_timer || (fingerprint_enabled && show_fingerprint_icon)) ? &tv : NULL) < 0) {
+		if (select(maxfd + 1, &fds, NULL, NULL,
+		           (need_timer || fingerprint_feedback) ? &tv : NULL) < 0) {
 			if (errno != EINTR)
 				die("lok: select: %s\n", strerror(errno));
 		}
@@ -552,21 +536,21 @@ readpw(Display *dpy, struct lock **locks, int nscreens, const char *hash)
 			int redraw = 0;
 
 			if (has_title_dt) {
-				fmtdatetime(now, sizeof(now), titletext);
+				fmtdatetime(now, sizeof(now), settings.title);
 				if (strcmp(now, last_title)) {
 					memcpy(last_title, now, sizeof(last_title));
 					redraw = 1;
 				}
 			}
 			if (has_sub_dt) {
-				fmtdatetime(now, sizeof(now), subtext);
+				fmtdatetime(now, sizeof(now), settings.subtitle);
 				if (strcmp(now, last_sub)) {
 					memcpy(last_sub, now, sizeof(last_sub));
 					redraw = 1;
 				}
 			}
 			if (has_footer_dt) {
-				fmtdatetime(now, sizeof(now), footertext);
+				fmtdatetime(now, sizeof(now), settings.footer);
 				if (strcmp(now, last_footer)) {
 					memcpy(last_footer, now, sizeof(last_footer));
 					redraw = 1;
@@ -586,7 +570,11 @@ lockscreen(Display *dpy, int screen)
 	char curs[] = {0, 0, 0, 0, 0, 0, 0, 0};
 	int i, ptgrab, kbgrab;
 	struct lock *lock;
-	XColor color, dummy;
+	XColor color = {
+		.red = settings.background[INIT][0] * 65535 + 0.5,
+		.green = settings.background[INIT][1] * 65535 + 0.5,
+		.blue = settings.background[INIT][2] * 65535 + 0.5,
+	};
 	XSetWindowAttributes wa;
 	Cursor invisible;
 
@@ -598,8 +586,8 @@ lockscreen(Display *dpy, int screen)
 	lock->w = DisplayWidth(dpy, lock->screen);
 	lock->h = DisplayHeight(dpy, lock->screen);
 
-	XAllocNamedColor(dpy, DefaultColormap(dpy, lock->screen),
-	                 colorname[INIT], &color, &dummy);
+	if (!XAllocColor(dpy, DefaultColormap(dpy, lock->screen), &color))
+		color.pixel = BlackPixel(dpy, lock->screen);
 
 	/* init */
 	wa.override_redirect = 1;
@@ -700,74 +688,73 @@ usage(void)
 	    " [cmd [arg ...]]\n");
 }
 
+static void
+override_text(char **text, const char *override)
+{
+	if (override) {
+		g_free(*text);
+		*text = g_strdup(override);
+	}
+}
+
 int
 main(int argc, char **argv)
 {
 	struct lock **locks;
-
-	setlocale(LC_ALL, "");
 	struct passwd *pwd;
-	struct group *grp;
 	uid_t duid;
 	gid_t dgid;
 	const char *hash;
-	char *authuser;
+	const char *title = NULL, *subtitle = NULL, *footer = NULL;
+	char *authuser, *home;
 	Display *dpy;
-	int i, s, nlocks, nscreens;
+	int s, nlocks, nscreens, config_fd;
+	int title_datetime = -1, subtitle_datetime = -1, footer_datetime = -1;
+	int typing_feedback = -1;
 	CARD16 dpmsstandby, dpmssuspend, dpmsoff, dpmslevel;
 	BOOL dpmson = 0;
 	int dpmssaved = 0;
 
-	if (fingerprint_enabled)
-		subtext = fingerprint_subtext;
+	setlocale(LC_ALL, "");
 
 	ARGBEGIN {
 	case 'v':
 		puts("lok-"VERSION);
 		return 0;
 	case 't':
-		titletext = EARGF(usage());
+		title = EARGF(usage());
 		break;
 	case 's':
-		subtext = EARGF(usage());
+		subtitle = EARGF(usage());
 		break;
 	case 'b':
-		footertext = EARGF(usage());
+		footer = EARGF(usage());
 		break;
 	case 'T':
-		title_datetime_updated = atoi(EARGF(usage()));
+		title_datetime = !!atoi(EARGF(usage()));
 		break;
 	case 'S':
-		subtitle_datetime_updated = atoi(EARGF(usage()));
+		subtitle_datetime = !!atoi(EARGF(usage()));
 		break;
 	case 'B':
-		footer_datetime_updated = atoi(EARGF(usage()));
+		footer_datetime = !!atoi(EARGF(usage()));
 		break;
 	case 'A':
-		typing_background_feedback = atoi(EARGF(usage()));
+		typing_feedback = !!atoi(EARGF(usage()));
 		break;
 	default:
 		usage();
 	} ARGEND
 
-	/* Capture the real invoking user, never $USER or the drop identity. */
-	if (!(pwd = getpwuid(getuid())) || !(authuser = strdup(pwd->pw_name)))
+	/* Capture the invoking account before looking up the drop identity. */
+	if (!(pwd = getpwuid(getuid())) || !(authuser = strdup(pwd->pw_name)) ||
+	    !(home = strdup(pwd->pw_dir)))
 		die("lok: cannot preserve invoking user\n");
 
-	/* validate drop-user and -group */
-	errno = 0;
-	if (!(pwd = getpwnam(user)))
-		die("lok: getpwnam %s: %s\n", user,
-		    errno ? strerror(errno) : "user entry not found");
+	if (!(pwd = getpwnam("nobody")) || pwd->pw_uid == 0 || pwd->pw_gid == 0)
+		die("lok: need an unprivileged nobody account\n");
 	duid = pwd->pw_uid;
 	dgid = pwd->pw_gid;
-	if (group) {
-		errno = 0;
-		if (!(grp = getgrnam(group)))
-			die("lok: getgrnam %s: %s\n", group,
-			    errno ? strerror(errno) : "group entry not found");
-		dgid = grp->gr_gid;
-	}
 
 #ifdef __linux__
 	dontkillme();
@@ -778,12 +765,14 @@ main(int argc, char **argv)
 		fprintf(stderr, "lok: mlockall: %s\n", strerror(errno));
 
 	/* Fork before loading the hash or opening X: neither reaches PAM. */
-	if (fingerprint_enabled && !fingerprint_prepare(&fingerprint, authuser))
-		fprintf(stderr, "lok: fingerprint worker unavailable; use password\n");
+	fingerprint_prepare(&fingerprint, authuser);
 	free(authuser);
 	atexit(stopfingerprint);
 	if (fingerprint.fd >= FD_SETSIZE)
 		fingerprint_stop(&fingerprint);
+
+	config_fd = settings_open(home);
+	free(home);
 
 	hash = gethash();
 	errno = 0;
@@ -804,10 +793,26 @@ main(int argc, char **argv)
 	/* check for Xrandr support */
 	rr.active = XRRQueryExtension(dpy, &rr.evbase, &rr.errbase);
 
-	for (i = 0; i < NUMCOLS; i++)
-		parsecolor(dpy, colorname[i], bgcol[i]);
-	parsecolor(dpy, textcolor, fgcol);
-	parsecolor(dpy, dimtextcolor, dimcol);
+	if (!settings_load(&settings, config_fd, dpy))
+		die("lok: invalid embedded config.ini\n");
+	if (!settings.fingerprint_enabled)
+		fingerprint_stop(&fingerprint);
+	else if (fingerprint.fd < 0)
+		fprintf(stderr, "lok: fingerprint worker unavailable; use password\n");
+
+	if (!subtitle && settings.fingerprint_enabled)
+		subtitle = settings.fingerprint_subtitle;
+	override_text(&settings.subtitle, subtitle);
+	override_text(&settings.title, title);
+	override_text(&settings.footer, footer);
+	if (title_datetime >= 0)
+		settings.title_datetime = title_datetime;
+	if (subtitle_datetime >= 0)
+		settings.subtitle_datetime = subtitle_datetime;
+	if (footer_datetime >= 0)
+		settings.footer_datetime = footer_datetime;
+	if (typing_feedback >= 0)
+		settings.typing_background_feedback = typing_feedback;
 
 	/* get number of screens in display "dpy" and blank them */
 	nscreens = ScreenCount(dpy);
@@ -825,13 +830,14 @@ main(int argc, char **argv)
 	if (nlocks != nscreens)
 		return 1;
 
-	/* turn the monitor off after monitortime seconds */
-	if (monitortime > 0 && DPMSCapable(dpy)) {
+	/* turn the monitor off after the configured timeout */
+	if (settings.monitor_timeout > 0 && DPMSCapable(dpy)) {
 		DPMSGetTimeouts(dpy, &dpmsstandby, &dpmssuspend, &dpmsoff);
 		DPMSInfo(dpy, &dpmslevel, &dpmson);
 		if (!dpmson)
 			DPMSEnable(dpy);
-		DPMSSetTimeouts(dpy, monitortime, monitortime, monitortime);
+		DPMSSetTimeouts(dpy, settings.monitor_timeout, settings.monitor_timeout,
+		                settings.monitor_timeout);
 		dpmssaved = 1;
 	}
 
@@ -853,7 +859,7 @@ main(int argc, char **argv)
 	}
 
 	/* All screens are locked and the post-lock child has no auth socket. */
-	fingerprint_start(&fingerprint, show_fingerprint_icon);
+	fingerprint_start(&fingerprint, settings.show_fingerprint_icon);
 
 	/* Wait for either password or confirmed fingerprint success. */
 	readpw(dpy, locks, nscreens, hash);

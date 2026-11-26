@@ -45,9 +45,9 @@ jobs:
               install -s -m 755 lok-static dist/package/lok
               install -s -m 700 lok-pam dist/package/lok-pam
               sed "s/VERSION/$version/g" lok.1 > dist/package/lok.1
-              cp LICENSE pam.d/lok-fingerprint dist/package/
+              cp LICENSE config.ini pam.d/lok-fingerprint dist/package/
               cp -R /usr/local/share/lok/licenses dist/package/
-              tar -C dist/package -czf "dist/lok-linux-$ARCH.tar.gz" lok lok-pam lok.1 lok-fingerprint LICENSE licenses
+              tar -C dist/package -czf "dist/lok-linux-$ARCH.tar.gz" lok lok-pam lok.1 lok-fingerprint config.ini LICENSE licenses
               tar -C /usr/local/share/lok/sources -cf "dist/lok-library-sources-$ARCH.tar" .
             '
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6

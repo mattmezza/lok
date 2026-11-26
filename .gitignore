@@ -3,6 +3,8 @@ lok-static
 lok-pam
 *.o
 config.h
+settings-defaults.h
+settings-defaults.h.tmp
 test/shim.so
 lok-*.tar.gz
 .tmux-session

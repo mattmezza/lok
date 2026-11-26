@@ -3,7 +3,7 @@
 
 include config.mk
 
-SRC = lok.c fingerprint.c fingerprint-pam.c
+SRC = lok.c settings.c fingerprint.c fingerprint-pam.c
 OBJ = $(SRC:.c=.o)
 
 all: lok
@@ -11,29 +11,36 @@ all: lok
 .c.o:
 	$(CC) -c $(CFLAGS) $<
 
-$(OBJ): arg.h config.h config.mk fingerprint.h
+$(OBJ): config.mk
+lok.o: arg.h fingerprint.h settings.h
+settings.o: settings.h settings-defaults.h
+fingerprint.o fingerprint-pam.o: fingerprint.h
 
-config.h:
-	cp config.def.h $@
+settings-defaults.h: config.ini Makefile
+	{ printf 'static const unsigned char default_settings[] = {\n'; \
+	  LC_ALL=C od -An -v -tu1 config.ini | awk '{ for (i = 1; i <= NF; i++) printf "%s, ", $$i; print "" }'; \
+	  printf '};\n'; } > $@.tmp
+	mv $@.tmp $@
 
 lok: $(OBJ)
 	$(CC) -o $@ $(OBJ) $(LDFLAGS)
 
-lok-static: lok.c fingerprint.c static-loader.c arg.h config.h config.mk fingerprint.h
+lok-static: lok.c settings.c fingerprint.c static-loader.c arg.h config.mk \
+		fingerprint.h settings.h settings-defaults.h
 	$(CC) $(CFLAGS) -DLOK_PAM_HELPER=\"$(PREFIX)/libexec/lok-pam\" -static \
-		-Wl,--wrap=dlopen -o $@ lok.c fingerprint.c static-loader.c $(STATIC_LIBS)
+		-Wl,--wrap=dlopen -o $@ lok.c settings.c fingerprint.c static-loader.c $(STATIC_LIBS)
 
 lok-pam: fingerprint-pam.c config.mk fingerprint.h
 	$(CC) $(CFLAGS) -DLOK_PAM_MAIN -o $@ fingerprint-pam.c -lpam
 
 clean:
-	rm -f config.h
+	rm -f settings-defaults.h settings-defaults.h.tmp
 	rm -f lok lok-static lok-pam $(OBJ) lok-$(VERSION).tar.gz test/shim.so test/fingerprint
 
 dist: clean
 	mkdir -p lok-$(VERSION)
-	cp -R LICENSE Makefile README.md config.mk config.def.h arg.h \
-		lok.1 fingerprint.h static-loader.c pam.d test $(SRC) lok-$(VERSION)
+	cp -R LICENSE Makefile README.md config.mk config.ini arg.h \
+		lok.1 fingerprint.h settings.h static-loader.c pam.d test $(SRC) lok-$(VERSION)
 	tar -cf - lok-$(VERSION) | gzip > lok-$(VERSION).tar.gz
 	rm -rf lok-$(VERSION)
 

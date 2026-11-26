@@ -27,9 +27,9 @@ Every text field (title, subtitle, footer) can contain
 .Xr strftime 3
 format specifiers; when enabled via
 .Fl T / S / B
-or the corresponding
-config.h
-settings, those placeholders are replaced with the current time and updated
+or the corresponding settings in
+.Pa config.ini ,
+those placeholders are replaced with the current time and updated
 every second, effectively turning any part of the display into a clock.
 .Pp
 If
@@ -66,11 +66,12 @@ Enable (1) or disable (0) live
 expansion in the footer text. Default: 1.
 .It Fl A Ar val
 Enable (1) or disable (0) alternating background feedback while typing.
-When disabled, the background stays at the idle color while typing; other
-typing visuals remain enabled. Default: 1, or the value of
+When disabled, the background stays at the idle color while typing.
+This overrides
 .Va typing_background_feedback
-in
-.Pa config.h .
+in the appearance section of
+.Pa config.ini ,
+which defaults to false.
 .El
 .Pp
 When live expansion is enabled for a field its text is scanned for
@@ -83,11 +84,10 @@ screen to act as a clock.
 .Nm
 reads the password hash from
 .Pa /etc/shadow
-and therefore must be installed setuid root; it drops privileges to the
-user and group configured in
-.Pa config.h
-(default: nobody/nobody) right after startup, before any font or text
-rendering happens. A separate privileged PAM supervisor authenticates the
+and therefore must be installed setuid root. It opens
+.Pa config.ini
+as the invoking user and parses it after dropping privileges to nobody and
+its primary group. A separate privileged PAM supervisor authenticates the
 original real user's name, captured before dropping privileges. It is forked
 before loading the password hash or opening X. A private socket carries only
 start/cancel control and confirmed authentication success; unlocking or locker
@@ -105,13 +105,19 @@ so the typed password can never be written to swap.
 On Linux, the OOM killer is disabled for the
 .Nm
 process to prevent it from being killed while the screen is locked.
-.Sh CUSTOMIZATION
+.Sh CONFIGURATION
 .Nm
-is customized by editing
-.Pa config.h
-(created from
-.Pa config.def.h )
-and (re)compiling the source code. This keeps it fast, secure and simple.
+loads
+.Pa $XDG_CONFIG_HOME/lok/config.ini
+at startup. If
+.Ev XDG_CONFIG_HOME
+is unset, empty or relative, it loads
+.Pa ~/.config/lok/config.ini .
+The example
+.Pa config.ini
+from the source tree or release archive documents all settings and defaults.
+Missing or invalid settings use built-in defaults. Command-line options
+override the corresponding INI settings.
 .Sh EXAMPLES
 Lock the screen and suspend:
 .Dl lok systemctl suspend
